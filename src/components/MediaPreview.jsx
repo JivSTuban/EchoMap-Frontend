@@ -55,10 +55,11 @@ export const MediaPreview = ({ file, type }) => {
             .resize(auto().gravity(autoGravity()));
 
           return (
-            <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
+            <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-lg">
+              <div className="absolute inset-0 shadow-inner z-10"></div>
               <AdvancedImage
                 cldImg={img}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover transform transition-transform hover:scale-105 duration-500"
                 onError={() => setError('Failed to load image preview')}
               />
             </div>
@@ -66,11 +67,12 @@ export const MediaPreview = ({ file, type }) => {
         }
         // For local file preview
         return (
-          <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-gray-100">
+          <div className="relative w-full aspect-square overflow-hidden bg-gray-100 rounded-lg">
+            <div className="absolute inset-0 shadow-inner z-10"></div>
             <img
               src={preview}
               alt="Preview"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover transform transition-transform hover:scale-105 duration-500"
               onError={() => setError('Failed to load image preview')}
             />
           </div>
@@ -79,7 +81,8 @@ export const MediaPreview = ({ file, type }) => {
 
       case 'video':
         return (
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-gray-100">
+          <div className="relative w-full aspect-video overflow-hidden bg-gray-100 rounded-lg">
+            <div className="absolute inset-0 shadow-inner z-10 pointer-events-none"></div>
             <video
               src={preview}
               controls
@@ -91,15 +94,17 @@ export const MediaPreview = ({ file, type }) => {
 
       case 'audio':
         return (
-          <div className="flex items-center space-x-3 p-4 rounded-lg bg-gray-50">
-            <DocumentIcon className="h-8 w-8 text-gray-400" />
+          <div className="flex items-center space-x-3 p-5 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50">
+            <div className="flex-shrink-0 rounded-full bg-indigo-100 p-3">
+              <DocumentIcon className="h-8 w-8 text-indigo-500" />
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">
                 {file.name}
               </p>
               <audio 
                 controls 
-                className="mt-2 w-full"
+                className="mt-3 w-full"
                 onError={() => setError('Failed to load audio preview')}
               >
                 <source src={preview} type={file.type} />
@@ -119,8 +124,12 @@ export const MediaPreview = ({ file, type }) => {
   };
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-200/80 overflow-hidden">
+    <div className="mt-4 overflow-hidden rounded-xl border border-gray-200/80 shadow-md bg-white p-1 transform transition-all">
       {renderPreview()}
+      <div className="p-3 text-xs text-gray-500 bg-gray-50 rounded-b-lg">
+        {file.name && <div className="truncate font-medium">{file.name}</div>}
+        {file.size && <div>{(file.size / (1024 * 1024)).toFixed(2)} MB</div>}
+      </div>
     </div>
   );
 };

@@ -6,10 +6,12 @@ import { MediaPreview } from './MediaPreview';
 import { PrivacyControls } from './PrivacyControls';
 import { uploadToCloudinary } from '../config/cloudinary';
 import { useAuth } from '../hooks/useAuth';
+import { useNotification } from '../context/NotificationContext';
 import API from '../services/api';
 
 export const MemoryCreation = () => {
   const { user } = useAuth();
+  const { addNotification } = useNotification();
   const [mediaFile, setMediaFile] = useState(null);
   const [mediaType, setMediaType] = useState('photo');
   const [location, setLocation] = useState(null);
@@ -108,6 +110,9 @@ export const MemoryCreation = () => {
           <h2 className="text-center text-2xl font-bold leading-9 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 to-purple-600">
             Create Memory
           </h2>
+          <p className="mt-1 text-center text-sm text-gray-600">
+            Capture your moments and pin them to special places
+          </p>
         </div>
 
         <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-2">
@@ -191,8 +196,18 @@ export const MemoryCreation = () => {
                 disabled={isUploading}
               />
               {location && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm text-gray-500">
+                    Selected: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                  </p>
+                  <p className="text-sm text-indigo-600">
+                    ⓘ Your memory will be anchored at the marker location
+                  </p>
+                </div>
+              )}
+              {!location && (
                 <p className="mt-2 text-sm text-gray-500">
-                  Selected: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                  Click on the map to place your memory marker
                 </p>
               )}
             </div>
@@ -203,6 +218,36 @@ export const MemoryCreation = () => {
             </div>
           </div>
         </div>
+
+        {/* Visual connection between media and location */}
+        {mediaFile && location && (
+          <div className="mt-6 px-6 py-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 flex items-center">
+            <div className="flex-shrink-0 h-16 w-16 rounded-lg overflow-hidden shadow-sm mr-4">
+              {mediaType === 'photo' && (
+                <img src={URL.createObjectURL(mediaFile)} alt="Preview" className="h-full w-full object-cover" />
+              )}
+              {mediaType === 'video' && (
+                <div className="h-full w-full bg-indigo-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              )}
+              {mediaType === 'audio' && (
+                <div className="h-full w-full bg-indigo-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-900">Memory Ready to Create</h3>
+              <p className="text-sm text-gray-600">Your {mediaType} will be linked to the selected location on the map.</p>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mt-6 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">

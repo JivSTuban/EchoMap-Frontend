@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth0 } from '@auth0/auth0-react';
 import { Button, Input } from "@heroui/react";
 import axios from 'axios';
 import { useNotification } from '../context/NotificationContext';
@@ -20,32 +19,6 @@ export const Login = () => {
   const navigate = useNavigate();
   const { addNotification } = useNotification();
   const { login } = useContext(AuthContext);
-  const { isAuthenticated, getAccessTokenSilently } = useAuth0();
-
-  useEffect(() => {
-    const handleAuth0Login = async () => {
-      if (isAuthenticated) {
-        debug('Auth0 login detected');
-        try {
-          const token = await getAccessTokenSilently();
-          debug('Auth0 token retrieved');
-          const response = await axios.post(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/auth0/exchange`, {
-            auth0Token: token
-          });
-          debug('Auth0 token exchanged successfully');
-          await login(response.data.token);
-          addNotification('Successfully logged in!', 'success');
-          navigate('/map');
-        } catch (error) {
-          debug('Auth0 token exchange failed', error);
-          console.error('Auth0 token exchange failed:', error);
-          addNotification('Failed to complete login. Please try again.', 'error');
-        }
-      }
-    };
-
-    handleAuth0Login();
-  }, [isAuthenticated]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

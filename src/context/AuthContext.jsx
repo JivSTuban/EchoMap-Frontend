@@ -9,54 +9,45 @@ export const AuthContext = createContext();
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(null);
 
-const debug = (message, data = null) => {
-  if (DEBUG) {
-    console.log(`[AuthContext] ${message}`, data || '');
-  }
-};
-
-const logAuthExchange = (message, data = null) => {
-  if (DEBUG) {
-    console.log(`[AuthContext] Auth Exchange: ${message}`, data || '');
-  }
-};
-
-  const logToken = (token) => {
+  const debug = (message, data = null) => {
     if (DEBUG) {
-      console.log(`[AuthContext] Token: ${token}`);
+      console.log(`[AuthContext] ${message}`, data || '');
+    }
+  };
+
+  const logAuthExchange = (message, data = null) => {
+    if (DEBUG) {
+      console.log(`[AuthContext] Auth Exchange: ${message}`, data || '');
     }
   };
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const token = localStorage.getItem('token');
       debug('Initializing auth state');
-      debug('Token present:', !!token);
-      logToken(token);
-
-      if (token && isAuthenticated()) {
-        debug('Token is valid and authenticated');
+      const storedToken = localStorage.getItem('token');
+      
+      if (storedToken) {
+        debug('Found token in localStorage');
         try {
-          // Create axios instance with auth header
-          const axiosWithAuth = axios.create({
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-
-          const response = await axiosWithAuth.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
-          const userData = { ...response.data, ...getDecodedToken() };
+          // Set the token in axios defaults
+          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          setToken(storedToken);
+          
+          // Verify the token by fetching user data
+          const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
+          const userData = response.data;
           debug('User data fetched successfully:', userData);
           
-          // Only set global axios defaults after successful /me request
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           setUser(userData);
         } catch (error) {
-          debug('Failed to fetch user', error?.response?.data || error?.message);
-          logout(); // Automatically logout if token is invalid
+          debug('Failed to verify token:', error?.response?.data || error?.message);
+          // If token verification fails, clean up
+          localStorage.removeItem('token');
+          delete axios.defaults.headers.common['Authorization'];
+          setToken(null);
         }
-      } else if (token && !isAuthenticated()) {
-        debug('Token present but invalid/expired');
-        logout(); // Automatically logout if token is expired
       }
       
       setLoading(false);
@@ -65,64 +56,99 @@ const logAuthExchange = (message, data = null) => {
     initializeAuth();
   }, []);
 
-  const login = async (token) => {
+  const login = async (newToken) => {
     try {
       debug('Logging in with token');
-      logToken(token);
-      localStorage.setItem('token', token);
       
-      // Create axios instance with auth header
-      const axiosWithAuth = axios.create({
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      // Store token in localStorage
+      localStorage.setItem('token', newToken);
+      setToken(newToken);
       
-      const response = await axiosWithAuth.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
-      const userData = { ...response.data, ...getDecodedToken() };
+      // Set the token in axios defaults
+      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+      
+      // Fetch user data
+      const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
+      const userData = response.data;
       debug('Login successful, user data:', userData);
       
-      // Only set global axios defaults after successful /me request
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(userData);
     } catch (error) {
       debug('Login failed to fetch user data', error?.response?.data || error?.message);
       // Clean up on failed login
       localStorage.removeItem('token');
       delete axios.defaults.headers.common['Authorization'];
-      throw error; // Re-throw to handle in the login component
+      setToken(null);
+      throw error;
     }
   };
 
-const exchangeOktaToken = async (oktaAuth) => {
-  try {
-    logAuthExchange('Starting Okta token exchange');
-    const oktaUser = await oktaAuth.getUser();
-    logAuthExchange('Okta user retrieved', oktaUser);
+  const exchangeAuth0Token = async (auth0Token) => {
+    try {
+      logAuthExchange('Starting Auth0 token exchange');
       
-    // Exchange Okta token for our JWT
-    const response = await axios.post(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/okta/exchange`, {
-      oktaToken: await oktaAuth.getAccessToken(),
-      email: oktaUser.email,
-      name: oktaUser.name
-    });
-    logAuthExchange('Okta token exchanged successfully', response.data);
+      // Exchange Auth0 token for our JWT
+      const response = await axios.post(
+        `${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/social/auth0/exchange`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${auth0Token}`
+          }
+        }
+      );
+      
+      logAuthExchange('Auth0 token exchanged successfully', response.data);
 
-    const { token } = response.data;
-    await login(token); // Use existing login flow with the new JWT
-  } catch (error) {
-    logAuthExchange('Okta token exchange failed', error?.response?.data || error?.message);
-    throw error;
-  }
-};
+      const { token: newToken } = response.data;
+      await login(newToken);
+      return true;
+    } catch (error) {
+      logAuthExchange('Auth0 token exchange failed', error?.response?.data || error?.message);
+      throw error;
+    }
+  };
+
+  const exchangeOktaToken = async (oktaAuth) => {
+    try {
+      logAuthExchange('Starting Okta token exchange');
+      const oktaUser = await oktaAuth.getUser();
+      logAuthExchange('Okta user retrieved', oktaUser);
+        
+      // Exchange Okta token for our JWT
+      const response = await axios.post(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/okta/exchange`, {
+        oktaToken: await oktaAuth.getAccessToken(),
+        email: oktaUser.email,
+        name: oktaUser.name
+      });
+      logAuthExchange('Okta token exchanged successfully', response.data);
+
+      const { token: newToken } = response.data;
+      await login(newToken);
+    } catch (error) {
+      logAuthExchange('Okta token exchange failed', error?.response?.data || error?.message);
+      throw error;
+    }
+  };
 
   const logout = () => {
     debug('Logging out user');
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
+    setToken(null);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, exchangeOktaToken }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      login, 
+      logout, 
+      loading, 
+      exchangeOktaToken,
+      exchangeAuth0Token,
+      token 
+    }}>
       {children}
     </AuthContext.Provider>
   );

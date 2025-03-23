@@ -1,9 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { App } from './App';
+import { BrowserRouter } from 'react-router-dom';
+import { AppRoutes } from './routes';
 import './index.css';
 import { Auth0Provider } from '@auth0/auth0-react';
 import { AuthProvider } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Use localhost:5173 for development
 const redirectUri = import.meta.env.DEV 
@@ -21,7 +23,11 @@ root.render(
     }}
   >
     <AuthProvider>
-      <App />
+      <NotificationProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </NotificationProvider>
     </AuthProvider>
   </Auth0Provider>
 );

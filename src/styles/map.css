@@ -1,0 +1,37 @@
+.map-container {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+}
+
+.ol-control {
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.ol-zoom {
+  top: 1rem;
+  left: 1rem;
+}
+
+.ol-zoom-in,
+.ol-zoom-out {
+  background-color: white;
+  border: none;
+  border-radius: 4px;
+  color: #666;
+  font-size: 1.2rem;
+  margin: 2px;
+  padding: 0;
+  height: 1.5rem;
+  width: 1.5rem;
+  line-height: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.ol-zoom-in:hover,
+.ol-zoom-out:hover {
+  background-color: #f0f0f0;
+}

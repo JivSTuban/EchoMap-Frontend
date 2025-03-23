@@ -1,17 +1,29 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-const NotificationContext = createContext();
+export const NotificationContext = createContext();
 
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
 
-  const addNotification = (message, type = 'info') => {
-    const id = Date.now();
+  // Use useCallback to memoize the function to prevent recreating it on each render
+  const addNotification = useCallback((message, type = 'info') => {
+    // Generate a more unique ID by adding a random suffix
+    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    
     setNotifications(prev => [...prev, { id, message, type }]);
+    
+    // Set a timeout to remove this specific notification
     setTimeout(() => {
       setNotifications(prev => prev.filter(notification => notification.id !== id));
     }, 5000);
-  };
+  }, []);
+
+  // Cleanup function for any lingering notifications when component unmounts
+  useEffect(() => {
+    return () => {
+      setNotifications([]);
+    };
+  }, []);
 
   return (
     <NotificationContext.Provider value={{ addNotification }}>

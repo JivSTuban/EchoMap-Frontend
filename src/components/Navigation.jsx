@@ -6,8 +6,8 @@ import { Button } from '@heroui/react';
 export const Navigation = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useContext(AuthContext);
-  const isAuthenticated = localStorage.getItem('token') !== null;
+  const { user, logout } = useContext(AuthContext);
+  const isAuthenticated = !!user;
 
   const handleLogout = () => {
     logout();
@@ -82,7 +82,7 @@ export const Navigation = ({ children }) => {
       </header>
 
       {/* Main content - takes remaining height */}
-      <main className="flex-1">
+      <main className="flex-1 min-h-[calc(100vh-4rem)]">
         {children}
       </main>
 

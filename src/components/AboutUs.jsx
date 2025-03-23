@@ -61,7 +61,7 @@ export const AboutUs = () => {
               <div className="p-6 bg-white/50 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-100">
                 <div className="relative w-24 h-24 mx-auto mb-4">
                   <img
-                    src="https://scontent.fceb1-1.fna.fbcdn.net/v/t39.30808-6/227868944_546175296734802_7620958084010548307_n.jpg?_nc_cat=105&ccb=1-7&_nc_sid=a5f93a&_nc_eui2=AeFs6Y04NeBFnS_k77EqJm7GwjDeusil6bzCMN66yKXpvE_Nh8bm4WH_LR-CJMj89mP8BabJ1ygwYCkBage0Ddua&_nc_ohc=w4vlQAWUf4cQ7kNvgHUM64A&_nc_zt=23&_nc_ht=scontent.fceb1-1.fna&_nc_gid=AZVo9Fca4g9iAHiAVNuv2HJ&oh=00_AYCmPQpy8kLUPHxkIMOjjFwHZBsg7ULvUfxBHR9n_h5Sgg&oe=67982C17"
+                    src="https://avatars.githubusercontent.com/u/162428952?v=4"
                     alt="Jiv Tuban"
                     className="w-full h-full rounded-full object-cover"
                   />
@@ -73,7 +73,7 @@ export const AboutUs = () => {
               <div className="p-6 bg-white/50 backdrop-blur-sm rounded-2xl shadow-sm border border-gray-100">
                 <div className="relative w-24 h-24 mx-auto mb-4">
                   <img
-                    src="https://scontent.fceb1-2.fna.fbcdn.net/v/t39.30808-6/463666934_8436115406424372_952693233551817994_n.jpg?stp=dst-jpg_r90_tt6&_nc_cat=111&ccb=1-7&_nc_sid=833d8c&_nc_eui2=AeF_tv_v_WlHyiH7teZOJCYOQ0fZiDf6EwRDR9mIN_oTBDxZF3u_SxoCJtxGcmPS8IRO2_vko_xaw4w1cyMbBnin&_nc_ohc=ttpB8s98w50Q7kNvgEV0QpS&_nc_zt=23&_nc_ht=scontent.fceb1-2.fna&_nc_gid=AfF-q2czrvC--57y4P6yhmw&oh=00_AYAJDxu1wxrcr7AjZtFuJiGDwuRDh72H-KaHGf0FwwlwXQ&oe=679837E6"
+                    src="https://avatars.githubusercontent.com/u/166014426?v=4"
                     alt="Aldrin Vitorillo"
                     className="w-full h-full rounded-full object-cover"
                   />
