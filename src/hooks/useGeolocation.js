@@ -1,111 +1,131 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-export const useGeolocation = () => {
+export const useGeolocation = (options = {}) => {
   const [position, setPosition] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [permissionDenied, setPermissionDenied] = useState(false);
+  const isInitializedRef = useRef(false);
+  const positionRef = useRef(null); // Keep position in ref to compare latest values
+  
+  // Stringify options to prevent unnecessary re-renders
+  // This way the useEffect dependency won't trigger for the same options object
+  const optionsKey = JSON.stringify(options);
 
   useEffect(() => {
-    console.log('Initializing geolocation...');
+    let watchId;
     
+    // Only log initialization message on first mount, not on re-renders
+    if (!isInitializedRef.current) {
+      console.log('Initializing geolocation...');
+      isInitializedRef.current = true;
+    }
+    
+    const onSuccess = (pos) => {
+      // Extract position data
+      const newLat = pos.coords.latitude;
+      const newLng = pos.coords.longitude;
+      const currentPos = positionRef.current;
+      
+      // Check if position has significantly changed before updating state
+      const hasChangedSignificantly = !currentPos || 
+        Math.abs(currentPos.latitude - newLat) > 0.0001 || 
+        Math.abs(currentPos.longitude - newLng) > 0.0001;
+      
+      if (hasChangedSignificantly) {
+        console.log('Geolocation update:', {
+          lat: newLat.toFixed(7),
+          lng: newLng.toFixed(7),
+          accuracy: Math.round(pos.coords.accuracy)
+        });
+        
+        const newPosition = {
+          latitude: newLat,
+          longitude: newLng,
+          accuracy: pos.coords.accuracy,
+          altitude: pos.coords.altitude,
+          altitudeAccuracy: pos.coords.altitudeAccuracy,
+          heading: pos.coords.heading,
+          speed: pos.coords.speed,
+          timestamp: pos.timestamp
+        };
+        
+        // Update both state and ref
+        setPosition(newPosition);
+        positionRef.current = newPosition;
+      }
+      
+      setLoading(false);
+      setError(null);
+    };
+
+    const onError = (err) => {
+      let errorMsg = err.message;
+      
+      // Provide more user-friendly error messages
+      switch(err.code) {
+        case 1: // PERMISSION_DENIED
+          errorMsg = 'Location permission denied. Please enable location services.';
+          break;
+        case 2: // POSITION_UNAVAILABLE
+          errorMsg = 'Location information is unavailable. Please try again later.';
+          break;
+        case 3: // TIMEOUT
+          errorMsg = 'Location request timed out. Please check your connection.';
+          break;
+      }
+      
+      console.error('Geolocation error:', errorMsg, '(Code:', err.code, ')');
+      setError(errorMsg);
+      setLoading(false);
+    };
+
+    // Check if geolocation is available
     if (!navigator.geolocation) {
-      console.log('Geolocation not supported');
-      setError('Geolocation is not supported by your browser');
+      const errorMsg = 'Geolocation is not supported by this browser';
+      console.error(errorMsg);
+      setError(errorMsg);
       setLoading(false);
       return;
     }
 
-    const handleSuccess = (pos) => {
-      console.log('Geolocation success:', {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude
-      });
-      setPosition({
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      });
-      setError(null);
-      setLoading(false);
-      setPermissionDenied(false);
-    };
-
-    const handleError = (err) => {
-      console.log('Geolocation error:', {
-        code: err.code,
-        message: err.message
-      });
+    try {
+      // Get initial position with high accuracy
+      navigator.geolocation.getCurrentPosition(
+        onSuccess, 
+        onError, 
+        { 
+          enableHighAccuracy: true, 
+          timeout: 10000,
+          maximumAge: 0,
+          ...options
+        }
+      );
       
-      if (err.code === 1) { // PERMISSION_DENIED
-        setPermissionDenied(true);
-        setError('Location access was denied. Please enable location services to use this feature.');
-        setLoading(false);
-      } else if (err.code === 2) { // POSITION_UNAVAILABLE
-        setError('Unable to determine your location. Please try again.');
-        setLoading(false);
-      } else if (err.code === 3) { // TIMEOUT
-        // Don't set loading to false here, we'll try the fallback
-        console.log('High accuracy timed out, trying lower accuracy...');
-        // Fall back to low accuracy
-        navigator.geolocation.getCurrentPosition(
-          handleSuccess,
-          (fallbackError) => {
-            console.log('Fallback geolocation error:', {
-              code: fallbackError.code,
-              message: fallbackError.message
-            });
-            setError('Location request timed out. Please try again or select a location manually.');
-            setLoading(false);
-          },
-          { 
-            enableHighAccuracy: false, 
-            timeout: 15000,
-            maximumAge: 60000  // Accept positions up to 1 minute old
-          }
-        );
-      } else {
-        setError(err.message);
-        setLoading(false);
-      }
-    };
-
-    console.log('Requesting current position...');
-    setLoading(true);
+      // Watch position for changes with lower accuracy to save battery
+      watchId = navigator.geolocation.watchPosition(
+        onSuccess, 
+        onError, 
+        { 
+          enableHighAccuracy: false, 
+          timeout: 15000,
+          maximumAge: 30000,
+          ...options
+        }
+      );
+    } catch (e) {
+      console.error('Error setting up geolocation:', e);
+      setError('Failed to initialize location services: ' + e.message);
+      setLoading(false);
+    }
     
-    // Try to get high accuracy position first with a reasonable timeout
-    navigator.geolocation.getCurrentPosition(
-      handleSuccess, 
-      handleError, 
-      {
-        enableHighAccuracy: true,
-        timeout: 7000, // Short timeout for high accuracy attempt
-        maximumAge: 0  // Don't use cached positions
-      }
-    );
-
-    // Set up watch for updates
-    const watchOptions = {
-      enableHighAccuracy: false, // Use lower accuracy for watching to avoid battery drain
-      timeout: 15000,
-      maximumAge: 30000 // Accept positions up to 30 seconds old for updates
-    };
-    
-    const watchId = navigator.geolocation.watchPosition(
-      handleSuccess, 
-      // For watch position, we don't need the fallback logic
-      (watchError) => {
-        console.log('Watch position error:', watchError);
-        // Don't set any state here, as we've already handled getting the position
-      }, 
-      watchOptions
-    );
-
+    // Cleanup
     return () => {
-      console.log('Cleaning up geolocation watch');
-      navigator.geolocation.clearWatch(watchId);
+      if (watchId) {
+        console.log('Cleaning up geolocation watch');
+        navigator.geolocation.clearWatch(watchId);
+      }
     };
-  }, []);
+  }, [optionsKey]); // Only re-run if options change
 
-  return { position, error, loading, permissionDenied };
+  return { position, error, loading };
 };

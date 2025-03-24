@@ -1,36 +1,42 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { useAuth } from './useAuth';
+import API from '../services/api';
+import { useGeolocation } from './useGeolocation';
 
-export const useMemories = () => {
+export const useMemories = (radius = 10) => {
   const [memories, setMemories] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const { token } = useAuth();
+  const { position } = useGeolocation();
 
   useEffect(() => {
     const fetchMemories = async () => {
+      if (!position) return;
+      
       try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_ECHOMAP_API_URL}/api/memories`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
+        setLoading(true);
+        setError(null);
+        
+        const response = await API.get('/api/memories/nearby/public', {
+          params: {
+            latitude: position.latitude,
+            longitude: position.longitude,
+            radius
           }
-        );
-        console.log('Memories API Response:', response.data);
+        });
+        
         setMemories(response.data);
       } catch (err) {
         console.error('Error fetching memories:', err);
-        setError(err.message);
+        setError('Failed to load memories');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMemories();
-  }, [token]);
+    if (position) {
+      fetchMemories();
+    }
+  }, [position, radius]);
 
   return { memories, loading, error };
 };

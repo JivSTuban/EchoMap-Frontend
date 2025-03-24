@@ -139,6 +139,27 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    if (!token) return null;
+    
+    debug('Refreshing user data');
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      const userData = response.data;
+      debug('User data refreshed:', userData);
+      setUser(userData);
+      return userData;
+    } catch (error) {
+      debug('Failed to refresh user data:', error?.response?.data || error?.message);
+      return null;
+    }
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -147,6 +168,7 @@ export const AuthProvider = ({ children }) => {
       loading, 
       exchangeOktaToken,
       exchangeAuth0Token,
+      refreshUser,
       token 
     }}>
       {children}

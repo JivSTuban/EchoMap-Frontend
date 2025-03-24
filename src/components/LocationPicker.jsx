@@ -46,9 +46,13 @@ export const LocationPicker = ({ value, onChange, disabled }) => {
         style: (feature) => {
           return new Style({
             image: new Icon({
-              anchor: [0.5, 1],
-              src: '/markers/marker.png',
-              scale: pulseEffect ? 0.025 : 0.01,
+              anchor: [0.5, 1.0],
+              anchorXUnits: 'fraction',
+              anchorYUnits: 'fraction',
+              src: '/LOGOicon.png',
+              scale: pulseEffect ? 0.008 : 0.005,
+              maxWidth: 24,
+              maxHeight: 24,
               opacity: pulseEffect ? 0.9 : 1
             })
           });
@@ -148,7 +152,7 @@ export const LocationPicker = ({ value, onChange, disabled }) => {
     <div className="space-y-2">
       <div 
         className={`w-full h-60 rounded-xl overflow-hidden border border-gray-200/80 shadow-sm ${
-          disabled ? 'opacity-50 pointer-events-none' : ''
+          disabled ? 'opacity-50 pointer-events-none' : 'cursor-pointer'
         }`}
       >
         <div ref={mapRef} className="w-full h-full" />

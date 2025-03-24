@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { PhotoIcon } from '@heroicons/react/24/outline';
 import { LocationPicker } from './LocationPicker';
@@ -10,7 +11,9 @@ import { useNotification } from '../context/NotificationContext';
 import API from '../services/api';
 
 export const MemoryCreation = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  console.log('Auth user data:', user);
   const { addNotification } = useNotification();
   const [mediaFile, setMediaFile] = useState(null);
   const [mediaType, setMediaType] = useState('photo');
@@ -52,25 +55,38 @@ export const MemoryCreation = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!mediaFile || !location) {
-      setError('Please select a media file and provide a location.');
-      return;
-    }
-
+    setIsUploading(true);
+    setError(null);
+    
     try {
-      setIsUploading(true);
-      setError(null);
-      setUploadProgress(0);
-
-      // Upload to Cloudinary
+      // First check if user is authenticated
+      if (!user) {
+        throw new Error('You must be logged in to create a memory');
+      }
+      
+      // Get the current auth token
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication token is missing. Please log in again.');
+      }
+      
+      // Validate form
+      if (!mediaFile) {
+        throw new Error('Please select an image, video, or audio file');
+      }
+      
+      if (!location) {
+        throw new Error('Please select a location for your memory');
+      }
+      
+      // The rest of the upload process
       const cloudinaryResponse = await uploadToCloudinary(mediaFile, (progress) => {
         if (progress.lengthComputable) {
           const percent = Math.round((progress.loaded * 100) / progress.total);
           setUploadProgress(percent);
         }
       });
-
-      // Create memory
+      
       const memoryData = {
         mediaUrl: cloudinaryResponse.url,
         cloudinaryPublicId: cloudinaryResponse.publicId,
@@ -79,10 +95,18 @@ export const MemoryCreation = () => {
         latitude: location.lat,
         longitude: location.lng,
         visibility: privacy,
-        userId: user?.sub
+        // userId is determined from authentication on the server side
       };
 
-      await API.post('/api/memories', memoryData);
+      console.log('Sending memory data to server:', memoryData);
+      
+      // Add authorization header to ensure the JWT token is included
+      await API.post('/api/memories', memoryData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
 
       // Reset form
       setMediaFile(null);
@@ -93,9 +117,12 @@ export const MemoryCreation = () => {
 
       // Show success message using NotificationContext
       addNotification('Memory created successfully!', 'success');
+      
+      // Redirect to home page
+      navigate('/map');
     } catch (err) {
       console.error('Failed to create memory:', err);
-      setError(err.response?.data?.message || 'Failed to create memory. Please try again.');
+      setError(err.response?.data?.message || err.message || 'Failed to create memory. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -199,9 +226,6 @@ export const MemoryCreation = () => {
                 <div className="mt-2 space-y-1">
                   <p className="text-sm text-gray-500">
                     Selected: {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                  </p>
-                  <p className="text-sm text-indigo-600">
-                    ⓘ Your memory will be anchored at the marker location
                   </p>
                 </div>
               )}
