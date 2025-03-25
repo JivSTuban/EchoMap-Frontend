@@ -15,9 +15,10 @@ export const MemoryCreation = () => {
   const { user } = useAuth();
   console.log('Auth user data:', user);
   const { addNotification } = useNotification();
-  const [mediaFile, setMediaFile] = useState(null);
   const [mediaType, setMediaType] = useState('photo');
+  const [mediaFile, setMediaFile] = useState(null);
   const [location, setLocation] = useState(null);
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState('PUBLIC');
   const [isUploading, setIsUploading] = useState(false);
@@ -64,12 +65,6 @@ export const MemoryCreation = () => {
         throw new Error('You must be logged in to create a memory');
       }
       
-      // Get the current auth token
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Authentication token is missing. Please log in again.');
-      }
-      
       // Validate form
       if (!mediaFile) {
         throw new Error('Please select an image, video, or audio file');
@@ -91,6 +86,7 @@ export const MemoryCreation = () => {
         mediaUrl: cloudinaryResponse.url,
         cloudinaryPublicId: cloudinaryResponse.publicId,
         mediaType: mediaType === 'photo' ? 'IMAGE' : mediaType.toUpperCase(),
+        title,
         description,
         latitude: location.lat,
         longitude: location.lng,
@@ -100,17 +96,26 @@ export const MemoryCreation = () => {
 
       console.log('Sending memory data to server:', memoryData);
       
-      // Add authorization header to ensure the JWT token is included
-      await API.post('/api/memories', memoryData, {
+      // Get the current token directly from localStorage 
+      const currentToken = localStorage.getItem('token');
+      if (!currentToken) {
+        throw new Error('Authentication token is missing. Please log in again.');
+      }
+      
+      // Use the API instance with explicit auth header for this critical request
+      const createResponse = await API.post('/api/memories', memoryData, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${currentToken}`,
           'Content-Type': 'application/json'
         }
       });
+      
+      console.log('Memory created successfully:', createResponse.data);
 
       // Reset form
       setMediaFile(null);
       setLocation(null);
+      setTitle('');
       setDescription('');
       setError(null);
       setUploadProgress(0);
@@ -195,6 +200,20 @@ export const MemoryCreation = () => {
             {mediaFile && (
               <MediaPreview file={mediaFile} type={mediaType} />
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className={inputStyle}
+                placeholder="Enter a title for your memory"
+                disabled={isUploading}
+              />
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

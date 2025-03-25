@@ -10,7 +10,7 @@ import { Point } from 'ol/geom';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { Style, Icon, Text, Fill, Stroke } from 'ol/style';
 import { useGeolocation } from '../hooks/useGeolocation';
-import { MemoryDetailsModal } from './MemoryDetailsModal';
+import { MemoryClusterPopup } from './MemoryClusterPopup';
 import API from '../services/api';
 import 'ol/ol.css';
 
@@ -18,6 +18,7 @@ export const MapView = () => {
   const mapRef = useRef();
   const mapInstance = useRef(null);
   const [selectedMemory, setSelectedMemory] = useState(null);
+  const [clusterMemories, setClusterMemories] = useState([]);
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -39,7 +40,7 @@ export const MapView = () => {
   
   // Use the geolocation hook with stable options
   const { position, error: geoError, loading: geoLoading } = useGeolocation(geoOptions);
-  const [showModal, setShowModal] = useState(false);
+  const [showClusterPopup, setShowClusterPopup] = useState(false);
 
   // Add some debugging to help us understand what's happening with geolocation
   useEffect(() => {
@@ -229,7 +230,7 @@ export const MapView = () => {
           const iconSrc = '/LOGOicon.png';
           
           return new Style({
-          image: new Icon({
+            image: new Icon({
               anchor: [0.5, 1.0], // Set anchor to bottom center of the icon
               anchorXUnits: 'fraction',
               anchorYUnits: 'fraction',
@@ -237,295 +238,213 @@ export const MapView = () => {
               src: iconSrc,
               maxWidth: 24, // Limit maximum width
               maxHeight: 24 // Limit maximum height
-            }),
-            // Add label with distance if available
-            text: memory.distanceInMeters ? new Text({
-              text: `${(memory.distanceInMeters / 1000).toFixed(1)}km`,
-              offsetY: 20,
-              fill: new Fill({ color: '#333' }),
-              stroke: new Stroke({ color: '#fff', width: 2 })
-            }) : undefined
+            })
+            // Title text removed to keep map cleaner
           });
         }
       });
+      
       map.addLayer(memoryLayer);
-    }
 
+      // Handle click events on the map
+      map.on('click', function(event) {
+        const features = map.getFeaturesAtPixel(event.pixel);
+        if (features && features.length > 0) {
+          // Get the first feature that has memory properties
+          const feature = features.find(f => f.get('properties'));
+          
+          if (feature) {
+            const clickedMemory = feature.get('properties');
+            
+            // Get current zoom level
+            const currentZoom = map.getView().getZoom();
+            
+            // Calculate dynamic proximity threshold based on zoom level
+            // Higher zoom = smaller threshold (less clustering)
+            // Base threshold is 0.05 km (50 meters) at zoom level 15
+            const baseThreshold = 0.05; // 50 meters at zoom level 15
+            const zoomFactor = Math.max(0.001, Math.pow(0.5, (currentZoom - 15))); // Exponential reduction with smaller minimum
+            
+            // For very high zoom levels (> 20), use an even smaller threshold
+            let proximityThreshold;
+            if (currentZoom > 20) {
+              // Calculate super-precise threshold for high zoom (5cm at zoom level 21+)
+              proximityThreshold = 0.00005;
+            } else {
+              proximityThreshold = baseThreshold * zoomFactor;
+            }
+            
+            console.log(`Current zoom: ${currentZoom}, using proximity threshold: ${proximityThreshold.toFixed(5)} km`);
+            
+            // Check if there are other memories nearby the clicked one
+            const clickedCoords = {
+              latitude: clickedMemory.latitude,
+              longitude: clickedMemory.longitude
+            };
+            
+            // Find memories within dynamic threshold
+            const closeMemories = memories.filter(memory => {
+              const memoryCoords = {
+                latitude: memory.latitude,
+                longitude: memory.longitude
+              };
+              
+              const distance = getDistanceBetweenPositions(clickedCoords, memoryCoords);
+              return distance <= proximityThreshold;
+            });
+            
+            console.log(`Found ${closeMemories.length} memories within ${proximityThreshold.toFixed(5)}km of clicked memory`);
+            
+            // If multiple memories are close, show them in a cluster
+            if (closeMemories.length > 1) {
+              setClusterMemories(closeMemories);
+              setShowClusterPopup(true);
+            } else {
+              // For single memory, also use the cluster popup component with just one memory
+              setClusterMemories([clickedMemory]);
+              setShowClusterPopup(true);
+            }
+          }
+        }
+      });
+      
+      // Center on user's location once we have position data
+      map.on('postrender', function() {
+        if (position && !hasInitialZoom.current && !isAnimatingRef.current) {
+          const userCoords = fromLonLat([position.longitude, position.latitude]);
+          isAnimatingRef.current = true;
+          
+          // Smoothly animate to user's location
+          const view = map.getView();
+          view.animate({
+            center: userCoords,
+            zoom: 15,
+            duration: 1000
+          }, function() {
+            hasInitialZoom.current = true;
+            isAnimatingRef.current = false;
+          });
+        }
+      });
+    }
+    
+    // Clean up map when component unmounts
     return () => {
       if (mapInstance.current) {
         mapInstance.current.setTarget(undefined);
         mapInstance.current = null;
       }
     };
-  }, []);
+  }, [position, getDistanceBetweenPositions, memories]);
 
-  // Update user location and memories on map
+  // Update memory markers on the map when memories change
   useEffect(() => {
-    if (!mapInstance.current) return;
-    if (isAnimatingRef.current) return; // Skip if animation is in progress
-
-    const source = mapInstance.current.getLayers().getArray()[1].getSource();
-    source.clear();
-
-    // Add memory markers
-    if (memories.length > 0) {
-      console.log('Adding memory markers to map:', memories.map(m => ({
-        id: m.id,
-        lat: m.latitude,
-        lng: m.longitude,
-        description: m.description,
-        mediaType: m.mediaType
-      })));
+    if (!mapInstance.current || !memories || memories.length === 0) return;
+    
+    console.log('Updating map with memories:', memories.length);
+    
+    const map = mapInstance.current;
+    const memoryLayer = map.getLayers().getArray().find(layer => 
+      layer instanceof VectorLayer && layer.getSource() instanceof VectorSource
+    );
+    
+    if (!memoryLayer) {
+      console.error('Memory layer not found');
+      return;
     }
     
+    const source = memoryLayer.getSource();
+    source.clear();
+    
+    // Add memory features
     memories.forEach(memory => {
-      if (memory.latitude && memory.longitude) {
-      const feature = new Feature({
-        geometry: new Point(fromLonLat([memory.longitude, memory.latitude])),
-        properties: memory
-      });
-      source.addFeature(feature);
-        console.log(`Added marker for memory ${memory.id} at position ${memory.latitude}, ${memory.longitude}`);
-      } else {
-        console.warn('Memory missing coordinates:', memory);
+      if (!memory.latitude || !memory.longitude) {
+        console.warn('Memory missing coordinates:', memory.id);
+        return;
+      }
+      
+      try {
+        const coords = fromLonLat([memory.longitude, memory.latitude]);
+        const feature = new Feature({
+          geometry: new Point(coords),
+          properties: memory
+        });
+        feature.setId(memory.id);
+        source.addFeature(feature);
+      } catch (e) {
+        console.error('Error adding memory feature:', e, memory);
       }
     });
-
-    // Always zoom to user's position first when it becomes available
-    if (position) {
-        const view = mapInstance.current.getView();
-      
-      // Get current map state
-      const currentCenter = toLonLat(view.getCenter());
-      const currentDistance = calculateDistance(
-        position.latitude, position.longitude,
-        currentCenter[1], currentCenter[0]
-      );
-      const currentZoom = view.getZoom();
-      
-      // Only zoom if:
-      // 1. We haven't done initial zoom yet, OR
-      // 2. User is far from current center AND we're not currently animating
-      const needsInitialZoom = !hasInitialZoom.current;
-      const needsRepositioning = currentDistance > 5 && currentZoom < 12;
-      
-      if (needsInitialZoom || needsRepositioning) {
-        // Set flag to prevent recursive animations
+    
+    // If we haven't zoomed to user location yet and we have memories,
+    // center on the first memory (fallback)
+    if (!hasInitialZoom.current && !position && memories.length > 0 && !isAnimatingRef.current) {
+      const firstMemory = memories[0];
+      if (firstMemory.latitude && firstMemory.longitude) {
         isAnimatingRef.current = true;
-        
-        // Set initial zoom flag
-        hasInitialZoom.current = true;
-        
-        console.log('Animating map to user position:', {
-          lat: position.latitude,
-          lng: position.longitude,
-          isInitial: needsInitialZoom
-        });
+        const memoryCoords = fromLonLat([firstMemory.longitude, firstMemory.latitude]);
+        const view = map.getView();
         
         view.animate({
-          center: fromLonLat([position.longitude, position.latitude]),
-          zoom: 15,
+          center: memoryCoords,
+          zoom: 15, 
           duration: 1000
-        }, () => {
-          // After animation completes, update memories if needed
-          if (memories.length > 0) {
-            fitMapToMemoriesAndUser(view, position, memories);
-          }
-          
-          // Release animation lock after a small delay
-          setTimeout(() => {
-            isAnimatingRef.current = false;
-          }, 200);
-        });
-      } else if (memories.length > 0 && !isAnimatingRef.current) {
-        // Only fit memories if we're not already animating
-        isAnimatingRef.current = true;
-        fitMapToMemoriesAndUser(view, position, memories);
-        
-        // Release animation lock after a delay
-        setTimeout(() => {
+        }, function() {
+          hasInitialZoom.current = true;
           isAnimatingRef.current = false;
-        }, 200);
+        });
       }
     }
-  }, [position, memories]);
-  
-  // Function to fit map view to include user and all memories
-  const fitMapToMemoriesAndUser = (view, userPosition, memoriesToFit) => {
-    if (!memoriesToFit.length || !userPosition || isAnimatingRef.current) return;
-    
-    console.log('Fitting map to include user and memories', {
-      userPosition: {
-        lat: userPosition.latitude,
-        lng: userPosition.longitude
-      },
-      memoryCount: memoriesToFit.length
-    });
-    
-    // Find the memory that is furthest from the user
-    let maxDistance = 0;
-    let furthestMemory = null;
-    
-    memoriesToFit.forEach(memory => {
-      const distance = calculateDistance(
-        userPosition.latitude, userPosition.longitude,
-        memory.latitude, memory.longitude
-      );
-      
-      if (distance > maxDistance) {
-        maxDistance = distance;
-        furthestMemory = memory;
-      }
-    });
-    
-    // Always adjust the view to include memories, even if they're close
-    // This makes sure we can see both the user and memories
-    if (furthestMemory) {
-      // Calculate appropriate zoom to fit all memories
-      const zoom = calculateZoomLevel(
-        userPosition.latitude, userPosition.longitude,
-        furthestMemory.latitude, furthestMemory.longitude
-      );
-      
-      // Calculate center between user and furthest memory
-      const centerLat = (userPosition.latitude + furthestMemory.latitude) / 2;
-      const centerLon = (userPosition.longitude + furthestMemory.longitude) / 2;
-      
-      console.log('Fitting map with calculated parameters', {
-        maxDistance,
-        zoom,
-        center: [centerLon, centerLat]
-      });
-      
-      // Use a gentler animation for the adjustment
-      view.animate({
-        center: fromLonLat([centerLon, centerLat]),
-        zoom: Math.min(zoom, 16), // Cap zoom to avoid getting too close
-        duration: 800
-      }, () => {
-        // Release animation lock after animation completes
-        setTimeout(() => {
-          isAnimatingRef.current = false;
-        }, 200);
-      });
-    } else {
-      // If no adjustment needed, release animation lock
-      isAnimatingRef.current = false;
-    }
+  }, [memories, position]);
+
+  // Handle closing memory details modal
+  const closeClusterPopup = () => {
+    // Add a small delay to avoid conflicts with potential immediate reopening
+    setTimeout(() => {
+      setShowClusterPopup(false);
+      setClusterMemories([]);
+    }, 50);
   };
 
-  // Handle click events
-  useEffect(() => {
-    if (!mapInstance.current) return;
-
-    const handleClick = (event) => {
-      const feature = mapInstance.current.forEachFeatureAtPixel(
-        event.pixel,
-        feature => feature
-      );
-
-      if (feature) {
-        const memory = feature.get('properties');
-        setSelectedMemory(memory);
-        setShowModal(true);
-      }
-    };
-
-    mapInstance.current.on('click', handleClick);
-    return () => mapInstance.current?.un('click', handleClick);
-  }, []);
-
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
+  // Handle selecting a memory from the cluster popup to view details
+  const handleSelectMemoryFromCluster = (memory) => {
+    // No longer needed to set selected memory, as we'll use the cluster popup for individual memories too
+    console.log('Selected memory from cluster:', memory.id);
   };
-
-  const calculateZoomLevel = (lat1, lon1, lat2, lon2) => {
-    const distance = calculateDistance(lat1, lon1, lat2, lon2);
-    const baseZoom = 15;
-    const zoomReduction = Math.log2(distance + 1);
-    return Math.max(baseZoom - zoomReduction, 10);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setTimeout(() => setSelectedMemory(null), 300); // Clear after animation
-  };
-
-  // Verify that all memories are properly displayed every few seconds
-  useEffect(() => {
-    if (!memories.length || !mapInstance.current) return;
-    
-    // Set up a periodic check to verify memories are on the map
-    const memoryCheckInterval = setInterval(() => {
-      if (!mapInstance.current) return;
-      
-      const source = mapInstance.current.getLayers().getArray()[1]?.getSource();
-      if (!source) return;
-      
-      const featuresCount = source.getFeatures().length;
-      
-      // If we have memories but no features, something's wrong - try to redraw
-      if (memories.length > 0 && featuresCount === 0) {
-        console.warn(`Memory display issue detected: ${memories.length} memories but ${featuresCount} features on map. Redrawing...`);
-        
-        // Force redraw by clearing and re-adding
-        source.clear();
-        
-        memories.forEach(memory => {
-          if (memory.latitude && memory.longitude) {
-            const feature = new Feature({
-              geometry: new Point(fromLonLat([memory.longitude, memory.latitude])),
-              properties: memory
-            });
-            source.addFeature(feature);
-            console.log(`Re-added memory ${memory.id} to map`);
-          }
-        });
-      } else {
-        console.log(`Memory display verification: ${featuresCount}/${memories.length} memories on map`);
-      }
-    }, 5000); // Check every 5 seconds
-    
-    return () => clearInterval(memoryCheckInterval);
-  }, [memories]);
 
   return (
     <div className="w-full h-[calc(100vh-4rem)] relative">
-      <div ref={mapRef} className="w-full h-full cursor-pointer" />
+      <div ref={mapRef} className="w-full h-full" />
       
-      {/* Memory Modal */}
-      <MemoryDetailsModal 
-        memory={selectedMemory}
-        isOpen={showModal}
-        onClose={closeModal}
-      />
-
-      {/* Loading State */}
+      {/* Loading indicator */}
       {loading && (
-        <div className="absolute top-4 right-4 bg-white px-4 py-2 rounded-full shadow">
-          Loading memories...
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-md">
+          <div className="flex items-center space-x-2">
+            <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="text-sm font-medium">Loading memories...</span>
+          </div>
         </div>
       )}
 
-      {/* Error State */}
+      {/* Error message */}
       {error && (
-        <div className="absolute top-4 right-4 bg-red-100 text-red-700 px-4 py-2 rounded-full shadow">
-          Error loading memories
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-50 text-red-700 px-4 py-2 rounded-full shadow-md">
+          <div className="flex items-center space-x-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-sm font-medium">{error}</span>
+          </div>
         </div>
       )}
 
       {/* Refresh Button */}
       <button 
-        className="absolute top-4 right-4 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors"
-        style={{ zIndex: 1000, display: loading ? 'none' : 'block' }}
+        className="absolute top-4 right-4 bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors z-10"
+        style={{ display: loading ? 'none' : 'block' }}
         onClick={() => {
           // Reset fetch flag and trigger a new fetch
           console.log('Manual refresh requested - resetting memory fetch state');
@@ -540,32 +459,48 @@ export const MapView = () => {
         </svg>
       </button>
 
-      {/* Geolocation States */}
-      {!position && !geoError && (
-        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-100 text-blue-800 px-6 py-3 rounded-full shadow-lg text-center">
-          <div className="flex items-center">
-            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Finding your location...
-          </div>
-        </div>
-      )}
-      
-      {/* Geolocation Error */}
-      {geoError && (
-        <div className="absolute top-4 left-4 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full shadow max-w-xs">
-          {geoError}
+      {/* Memory Count */}
+      {memories.length > 0 && (
+        <div className="absolute bottom-4 left-4 bg-white px-4 py-2 rounded-full shadow-md z-10">
+          <span className="text-sm font-medium">
+            {memories.length} {memories.length === 1 ? 'memory' : 'memories'} nearby
+          </span>
         </div>
       )}
 
-      {/* Memory Count */}
-      {memories.length > 0 && (
-        <div className="absolute bottom-4 left-4 bg-white px-4 py-2 rounded-full shadow">
-          {memories.length} {memories.length === 1 ? 'memory' : 'memories'} nearby
-        </div>
-      )}
+      {/* My Location Button */}
+      <button 
+        className="absolute bottom-4 right-4 bg-white p-3 mb-3 rounded-full shadow-lg hover:bg-gray-100 transition-colors z-10"
+        onClick={() => {
+          if (!position || !mapInstance.current) return;
+          
+          // Center map on user's current location
+          const userCoords = fromLonLat([position.longitude, position.latitude]);
+          isAnimatingRef.current = true;
+          
+          const view = mapInstance.current.getView();
+          view.animate({
+            center: userCoords,
+            zoom: 17, // Slightly higher zoom for better detail
+            duration: 750
+          }, function() {
+            isAnimatingRef.current = false;
+          });
+        }}
+        aria-label="Center on my location"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+        </svg>
+      </button>
+
+      {/* Memory Cluster Popup */}
+      <MemoryClusterPopup
+        memories={clusterMemories}
+        isOpen={showClusterPopup}
+        onClose={closeClusterPopup}
+        onSelectMemory={handleSelectMemoryFromCluster}
+      />
     </div>
   );
 };

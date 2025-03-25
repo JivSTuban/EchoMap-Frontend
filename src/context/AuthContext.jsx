@@ -73,6 +73,7 @@ export const AuthProvider = ({ children }) => {
       debug('Login successful, user data:', userData);
       
       setUser(userData);
+      return userData;
     } catch (error) {
       debug('Login failed to fetch user data', error?.response?.data || error?.message);
       // Clean up on failed login
@@ -101,8 +102,18 @@ export const AuthProvider = ({ children }) => {
       logAuthExchange('Auth0 token exchanged successfully', response.data);
 
       const { token: newToken } = response.data;
-      await login(newToken);
-      return true;
+      
+      // Log the token for debugging
+      debug('Received new token from Auth0 exchange:', newToken.substring(0, 20) + '...');
+      
+      // Save the token and get user data
+      const userData = await login(newToken);
+      
+      // Ensure the token is set in both localStorage and axios defaults
+      localStorage.setItem('token', newToken);
+      axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+      
+      return userData;
     } catch (error) {
       logAuthExchange('Auth0 token exchange failed', error?.response?.data || error?.message);
       throw error;
@@ -140,15 +151,31 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    if (!token) return null;
+    if (!token) {
+      debug('Refresh user failed: No token available');
+      return null;
+    }
     
     debug('Refreshing user data');
     try {
-      const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      // Ensure we're using the latest token from state
+      const headers = {
+        'Authorization': `Bearer ${token}`
+      };
+      
+      const response = await axios.get(
+        `${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`, 
+        { 
+          headers,
+          // Add timestamp to prevent caching
+          params: { _t: Date.now() }
         }
-      });
+      );
+      
+      if (!response.data) {
+        debug('Refresh user returned empty data');
+        return null;
+      }
       
       const userData = response.data;
       debug('User data refreshed:', userData);
@@ -156,6 +183,11 @@ export const AuthProvider = ({ children }) => {
       return userData;
     } catch (error) {
       debug('Failed to refresh user data:', error?.response?.data || error?.message);
+      if (error.response?.status === 401) {
+        // Token might be invalid, clean up
+        debug('Token appears invalid during refresh, logging out');
+        logout();
+      }
       return null;
     }
   };

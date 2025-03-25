@@ -50,7 +50,7 @@ export const LocationPicker = ({ value, onChange, disabled }) => {
               anchorXUnits: 'fraction',
               anchorYUnits: 'fraction',
               src: '/LOGOicon.png',
-              scale: pulseEffect ? 0.008 : 0.005,
+              scale: pulseEffect ? 0.01 : 0.008,
               maxWidth: 24,
               maxHeight: 24,
               opacity: pulseEffect ? 0.9 : 1

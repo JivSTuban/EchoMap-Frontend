@@ -12,6 +12,13 @@ export const MemoryCard = ({ memory }) => {
   return (
     <Card className="bg-white bg-opacity-50 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all">
       <CardBody className="flex flex-col gap-3 p-6">
+        {/* Display the title when available */}
+        {memory.title && (
+          <h3 className="font-bold text-lg text-gray-900 mb-1 truncate">
+            {memory.title}
+          </h3>
+        )}
+        
         <div className="flex justify-between items-center">
           <Button
             size="sm"
@@ -25,6 +32,7 @@ export const MemoryCard = ({ memory }) => {
             {Math.round(memory.distance)}m
           </Chip>
         </div>
+        
         <div className="flex gap-2 text-sm mt-2">
           <Badge className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm px-3 py-1 rounded-full">
             {memory.visibility.toLowerCase()}

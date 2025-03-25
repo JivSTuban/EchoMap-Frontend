@@ -2,12 +2,14 @@ import { useState, useEffect, useContext } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { AuthContext } from '../context/AuthContext';
 import { uploadToCloudinary } from '../config/cloudinary';
+import { useNotification } from '../context/NotificationContext';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
 
 export const Profile = () => {
   const { user, token } = useAuth();
   const { refreshUser } = useContext(AuthContext);
+  const { addNotification } = useNotification();
   const [isEditing, setIsEditing] = useState(true);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -20,7 +22,6 @@ export const Profile = () => {
     usernameWarningShown: false
   });
   const [error, setError] = useState(null);
-  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -84,7 +85,7 @@ export const Profile = () => {
         profilePicture: imageUrl
       }));
       
-      setSuccessMessage('Profile picture uploaded successfully.');
+      addNotification('Profile picture uploaded successfully.', 'success');
     } catch (error) {
       setError('Failed to upload image. Please try again.');
       console.error('Upload error:', error);
@@ -100,31 +101,44 @@ export const Profile = () => {
     setError(null);
     
     try {
+      // Log what we're sending to ensure name is included
+      console.log('Updating profile with data:', formData);
+      
+      // For social login accounts, prevent changing username by ensuring original value is sent
+      const dataToSubmit = { ...formData };
+      if (user.socialLogin) {
+        dataToSubmit.username = user.username;
+        dataToSubmit.email = user.email;
+      }
+      
       const response = await axios.put(
         `${import.meta.env.VITE_ECHOMAP_API_URL}/api/users/${user.id}`,
-        formData,
+        dataToSubmit,
         {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         }
       );
       
+      console.log('Profile update response:', response.data);
+      
       // Refresh the user data in the auth context
       try {
-        await refreshUser();
-        console.log('User data refreshed in context');
+        const userData = await refreshUser();
+        console.log('User data refreshed in context:', userData);
       } catch (refreshError) {
         console.error('Failed to refresh user data in context:', refreshError);
       }
       
       const usernameChanged = formData.username !== user.username;
       
-      setSuccessMessage(
-        usernameChanged 
-          ? 'Profile updated successfully. Note: You will need to use your new username on your next login.' 
-          : 'Profile updated successfully.'
-      );
+      if (usernameChanged) {
+        addNotification('Profile updated successfully. Note: You will need to use your new username on your next login.', 'success');
+      } else {
+        addNotification('Profile updated successfully.', 'success');
+      }
     } catch (error) {
       console.error('Update error:', error);
       setError(error.response?.data?.message || 'Failed to update profile. Please try again.');
@@ -150,23 +164,9 @@ export const Profile = () => {
     <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8 bg-white shadow-md rounded-lg my-8">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">My Profile</h1>
       
-      {user.socialLogin && (
-        <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4">
-          <p className="font-bold">Social Login Account</p>
-          <p>You're using a social login account ({user.socialProvider || 'external provider'}). 
-            Be careful when changing your username as it may affect your ability to log in.</p>
-        </div>
-      )}
-      
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
           {error}
-        </div>
-      )}
-      
-      {successMessage && (
-        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-          {successMessage}
         </div>
       )}
       
@@ -232,21 +232,6 @@ export const Profile = () => {
                       : 'Email & Password'}
                   </span>
                 </div>
-                <div className="flex items-center">
-                  <span className="font-medium text-gray-700 min-w-32">Account Created:</span>
-                  <span className="text-gray-600">
-                    {user.createdAt 
-                      ? new Date(user.createdAt).toLocaleDateString() 
-                      : 'Unknown'}
-                  </span>
-                </div>
-                {user.socialLogin && (
-                  <p className="mt-2 text-sm text-gray-500 bg-yellow-50 p-2 rounded">
-                    <span className="font-semibold">Note:</span> For social login accounts, your username is used to 
-                    link your social identity to your EchoMap account. If you change your username, 
-                    you may encounter login issues.
-                  </p>
-                )}
               </div>
               
               <div>
@@ -256,9 +241,12 @@ export const Profile = () => {
                   name="username"
                   value={formData.username}
                   onChange={handleInputChange}
-                  disabled={loading}
+                  disabled={true}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                 />
+                {user.socialLogin && (
+                  <p className="mt-1 text-sm text-gray-500">Username cannot be changed for social login accounts.</p>
+                )}
               </div>
               
               <div>
@@ -306,7 +294,6 @@ export const Profile = () => {
                     type="button"
                     onClick={() => {
                       setError(null);
-                      setSuccessMessage('');
                       // Reset form data to original user values
                       if (user) {
                         setFormData({

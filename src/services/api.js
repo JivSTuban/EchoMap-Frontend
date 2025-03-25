@@ -10,7 +10,7 @@ const API = axios.create({
 // Add request interceptor to include auth token if available
 API.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -26,7 +26,7 @@ API.interceptors.response.use(
     // Handle authentication errors
     if (error.response && error.response.status === 401) {
       // Redirect to login or clear tokens
-      localStorage.removeItem('auth_token');
+      localStorage.removeItem('token');
       // Could dispatch an action to update auth state if using Redux/Context
     }
     

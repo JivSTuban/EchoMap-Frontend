@@ -22,6 +22,7 @@ export const MemoryEdit = () => {
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState('photo');
   const [mapLocation, setMapLocation] = useState(null);
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState('PUBLIC');
   const [isUploading, setIsUploading] = useState(false);
@@ -60,6 +61,7 @@ export const MemoryEdit = () => {
         setMemory(response.data);
         
         // Initialize form with memory data
+        setTitle(response.data.title || '');
         setDescription(response.data.description || '');
         setMediaUrl(response.data.mediaUrl || '');
         setMediaType(convertMediaTypeToUI(response.data.mediaType));
@@ -79,6 +81,7 @@ export const MemoryEdit = () => {
     // If we have initial memory data from navigation state, use it
     if (initialMemory) {
       setMemory(initialMemory);
+      setTitle(initialMemory.title || '');
       setDescription(initialMemory.description || '');
       setMediaUrl(initialMemory.mediaUrl || '');
       setMediaType(convertMediaTypeToUI(initialMemory.mediaType));
@@ -157,6 +160,7 @@ export const MemoryEdit = () => {
       // Prepare memory data
       const memoryData = {
         id: memory.id,
+        title,
         description,
         latitude: mapLocation.lat,
         longitude: mapLocation.lng,
@@ -309,9 +313,23 @@ export const MemoryEdit = () => {
               {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
             </div>
 
-            {/* Description */}
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+            <div className="mb-6">
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
+                Title
+              </label>
+              <input
+                type="text"
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Enter a title for your memory"
+                disabled={isUploading}
+              />
+            </div>
+
+            <div className="mb-6">
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
                 Description
               </label>
               <textarea
