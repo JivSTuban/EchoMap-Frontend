@@ -149,19 +149,10 @@ export const MapView = () => {
           backoffTime: backoffTimeRef.current
         });
         
-        // Use the public endpoint if user is not logged in
-        const endpoint = '/api/memories/nearby/public';
-        const response = await API.get(endpoint, {
-          params: {
-            lat: position.latitude,
-            lng: position.longitude,
-            radius: 10 // 10km radius
-          },
-          // Add timeout to prevent hanging requests
-          timeout: 10000
-        });
+        // Use the /api/memories/web/all endpoint to fetch all memories
+        const response = await API.get('/api/memories/web/all');
         
-        console.log(`Found ${response.data.length} memories nearby`);
+        console.log(`Found ${response.data.length} memories`);
         setMemories(response.data);
         
         // Mark that we've successfully loaded memories

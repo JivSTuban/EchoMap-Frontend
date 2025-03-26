@@ -14,7 +14,7 @@ export const MemoryCreation = () => {
   const { user } = useAuth();
   console.log('Auth user data:', user);
   const { addNotification } = useNotification();
-  const [mediaType, setMediaType] = useState('photo');
+  const [mediaType, setMediaType] = useState(null);
   const [mediaFile, setMediaFile] = useState(null);
   const [location, setLocation] = useState(null);
   const [title, setTitle] = useState('');
@@ -30,27 +30,40 @@ export const MemoryCreation = () => {
     video: ['video/mp4', 'video/quicktime', 'video/x-msvideo']
   };
 
+  const detectMediaType = (file) => {
+    if (!file) return null;
+    
+    for (const [type, mimeTypes] of Object.entries(validTypes)) {
+      if (mimeTypes.some(mime => file.type.startsWith(mime))) {
+        return type;
+      }
+    }
+    return null;
+  };
+
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
-    if (validTypes[mediaType].some(type => file.type.startsWith(type))) {
+    const detectedType = detectMediaType(file);
+    if (detectedType) {
       setMediaFile(file);
+      setMediaType(detectedType);
       setError(null);
     } else {
-      setError(`Please select a valid ${mediaType} file.`);
+      setError(`Unsupported file type. Please upload an image, video, or audio file.`);
     }
-  }, [mediaType]);
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'audio/*': mediaType === 'audio' ? ['.mp3', '.wav'] : [],
-      'image/*': mediaType === 'photo' ? ['.jpeg', '.jpg', '.png', '.gif'] : [],
-      'video/*': mediaType === 'video' ? ['.mp4', '.mov', '.avi'] : []
+      'audio/*': ['.mp3', '.wav'],
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif'],
+      'video/*': ['.mp4', '.mov', '.avi']
     },
     multiple: false,
-    maxSize: mediaType === 'video' ? 50 * 1024 * 1024 : 10 * 1024 * 1024
+    maxSize: 50 * 1024 * 1024 // Allow up to 50MB for all file types
   });
 
   const handleSubmit = async (e) => {
@@ -84,7 +97,7 @@ export const MemoryCreation = () => {
       const memoryData = {
         mediaUrl: cloudinaryResponse.url,
         cloudinaryPublicId: cloudinaryResponse.publicId,
-        mediaType: mediaType === 'photo' ? 'IMAGE' : mediaType.toUpperCase(),
+        mediaType: mediaType === 'photo' ? 'IMAGE' : mediaType === 'audio' ? 'AUDIO' : 'VIDEO',
         title,
         description,
         latitude: location.lat,
@@ -113,6 +126,7 @@ export const MemoryCreation = () => {
 
       // Reset form
       setMediaFile(null);
+      setMediaType(null);
       setLocation(null);
       setTitle('');
       setDescription('');
@@ -151,25 +165,8 @@ export const MemoryCreation = () => {
           <div className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Media Type
+                Upload Media
               </label>
-              <select
-                value={mediaType}
-                onChange={(e) => {
-                  setMediaType(e.target.value);
-                  setMediaFile(null);
-                  setError(null);
-                }}
-                className={inputStyle}
-                disabled={isUploading}
-              >
-                <option value="photo">Photo</option>
-                <option value="video">Video</option>
-                <option value="audio">Audio</option>
-              </select>
-            </div>
-
-            <div>
               <div
                 {...getRootProps()}
                 className={`mt-2 flex justify-center rounded-lg border-2 border-dashed px-6 py-10 ${
@@ -188,16 +185,19 @@ export const MemoryCreation = () => {
                     <p className="pl-1">or drag and drop</p>
                   </div>
                   <p className="text-xs leading-5 text-gray-600">
-                    {mediaType === 'audio' ? 'MP3, WAV up to 10MB' :
-                     mediaType === 'photo' ? 'PNG, JPG, GIF up to 10MB' :
-                     'MP4, MOV up to 50MB'}
+                    Photos (PNG, JPG, GIF), Videos (MP4, MOV), or Audio (MP3, WAV)
                   </p>
                 </div>
               </div>
             </div>
 
             {mediaFile && (
-              <MediaPreview file={mediaFile} type={mediaType} />
+              <>
+                <div className="bg-indigo-50 px-4 py-2 rounded-lg text-sm text-indigo-700">
+                  Detected media type: <span className="font-semibold capitalize">{mediaType}</span>
+                </div>
+                <MediaPreview file={mediaFile} type={mediaType} />
+              </>
             )}
 
             <div>
