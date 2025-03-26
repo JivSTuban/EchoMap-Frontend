@@ -1,35 +1,36 @@
 import React from 'react';
-import { createRoot } from 'react-dom/client';
+import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { AppRoutes } from './routes';
-import './index.css';
 import { Auth0Provider } from '@auth0/auth0-react';
 import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { AppRoutes } from './routes';
+import './index.css';
 
-// Use localhost:5173 for development
-const redirectUri = import.meta.env.DEV 
+const callbackUrl = import.meta.env.MODE === 'development'
   ? 'http://localhost:5173/login/callback'
   : window.location.origin + '/login/callback';
 
-const root = createRoot(document.getElementById('root'));
-
-root.render(
-  <Auth0Provider
-    domain={import.meta.env.VITE_AUTH0_DOMAIN}
-    clientId={import.meta.env.VITE_AUTH0_CLIENT_ID}
-    authorizationParams={{
-      redirect_uri: redirectUri
-    }}
-  >
-    <AuthProvider>
-      <NotificationProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </NotificationProvider>
-    </AuthProvider>
-  </Auth0Provider>
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <BrowserRouter>
+      <Auth0Provider
+        domain={import.meta.env.VITE_AUTH0_DOMAIN}
+        clientId={import.meta.env.VITE_AUTH0_CLIENT_ID}
+        authorizationParams={{
+          redirect_uri: callbackUrl,
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: "openid profile email"
+        }}
+      >
+        <AuthProvider>
+          <NotificationProvider>
+            <AppRoutes />
+          </NotificationProvider>
+        </AuthProvider>
+      </Auth0Provider>
+    </BrowserRouter>
+  </React.StrictMode>
 );
 
 /*

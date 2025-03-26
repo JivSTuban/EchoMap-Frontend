@@ -1,18 +1,104 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 export const useGeolocation = (options = {}) => {
   const [position, setPosition] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const isInitializedRef = useRef(false);
-  const positionRef = useRef(null); // Keep position in ref to compare latest values
+  const positionRef = useRef(null);
+  const retryCountRef = useRef(0);
+  const maxRetries = 3;
+  const isRequestingRef = useRef(false);
   
   // Stringify options to prevent unnecessary re-renders
-  // This way the useEffect dependency won't trigger for the same options object
   const optionsKey = JSON.stringify(options);
+
+  const requestLocation = useCallback(() => {
+    if (isRequestingRef.current) return;
+    
+    isRequestingRef.current = true;
+    setLoading(true);
+    setError(null);
+    
+    // Try with high accuracy first
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        isRequestingRef.current = false;
+        const newPosition = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          altitude: pos.coords.altitude,
+          altitudeAccuracy: pos.coords.altitudeAccuracy,
+          heading: pos.coords.heading,
+          speed: pos.coords.speed,
+          timestamp: pos.timestamp
+        };
+        
+        setPosition(newPosition);
+        positionRef.current = newPosition;
+        setLoading(false);
+        retryCountRef.current = 0;
+      },
+      (err) => {
+        // If high accuracy fails, try with low accuracy
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            isRequestingRef.current = false;
+            const newPosition = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              altitude: pos.coords.altitude,
+              altitudeAccuracy: pos.coords.altitudeAccuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              timestamp: pos.timestamp
+            };
+            
+            setPosition(newPosition);
+            positionRef.current = newPosition;
+            setLoading(false);
+            retryCountRef.current = 0;
+          },
+          (err) => {
+            isRequestingRef.current = false;
+            let errorMsg = err.message;
+            
+            switch(err.code) {
+              case 1: // PERMISSION_DENIED
+                errorMsg = 'Location permission denied. Please enable location services in your browser settings.';
+                break;
+              case 2: // POSITION_UNAVAILABLE
+                errorMsg = 'Location information is unavailable. Please check your device\'s GPS settings.';
+                break;
+              case 3: // TIMEOUT
+                errorMsg = 'Location request timed out. Please try again.';
+                break;
+            }
+            
+            console.error('Geolocation error:', errorMsg, '(Code:', err.code, ')');
+            setError(errorMsg);
+            setLoading(false);
+          },
+          { 
+            enableHighAccuracy: false,
+            timeout: 30000,
+            maximumAge: 30000
+          }
+        );
+      },
+      { 
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+      }
+    );
+  }, []);
 
   useEffect(() => {
     let watchId;
+    let timeoutId;
     
     // Only log initialization message on first mount, not on re-renders
     if (!isInitializedRef.current) {
@@ -21,6 +107,11 @@ export const useGeolocation = (options = {}) => {
     }
     
     const onSuccess = (pos) => {
+      // Clear any pending timeouts
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      
       // Extract position data
       const newLat = pos.coords.latitude;
       const newLng = pos.coords.longitude;
@@ -56,6 +147,7 @@ export const useGeolocation = (options = {}) => {
       
       setLoading(false);
       setError(null);
+      retryCountRef.current = 0; // Reset retry count on success
     };
 
     const onError = (err) => {
@@ -64,68 +156,73 @@ export const useGeolocation = (options = {}) => {
       // Provide more user-friendly error messages
       switch(err.code) {
         case 1: // PERMISSION_DENIED
-          errorMsg = 'Location permission denied. Please enable location services.';
+          errorMsg = 'Location permission denied. Please enable location services in your browser settings.';
           break;
         case 2: // POSITION_UNAVAILABLE
-          errorMsg = 'Location information is unavailable. Please try again later.';
+          errorMsg = 'Location information is unavailable. Please check your device\'s GPS settings.';
           break;
         case 3: // TIMEOUT
-          errorMsg = 'Location request timed out. Please check your connection.';
+          errorMsg = 'Location request timed out. Retrying...';
           break;
       }
       
       console.error('Geolocation error:', errorMsg, '(Code:', err.code, ')');
       setError(errorMsg);
-      setLoading(false);
-    };
-
-    // Check if geolocation is available
-    if (!navigator.geolocation) {
-      const errorMsg = 'Geolocation is not supported by this browser';
-      console.error(errorMsg);
-      setError(errorMsg);
-      setLoading(false);
-      return;
-    }
-
-    try {
-      // Get initial position with high accuracy
-      navigator.geolocation.getCurrentPosition(
-        onSuccess, 
-        onError, 
-        { 
-          enableHighAccuracy: true, 
-          timeout: 10000,
-          maximumAge: 0,
-          ...options
-        }
-      );
       
-      // Watch position for changes with lower accuracy to save battery
-      watchId = navigator.geolocation.watchPosition(
-        onSuccess, 
-        onError, 
-        { 
-          enableHighAccuracy: false, 
-          timeout: 15000,
-          maximumAge: 30000,
-          ...options
+      // Handle retries for timeout errors
+      if (err.code === 3 && retryCountRef.current < maxRetries) {
+        retryCountRef.current++;
+        console.log(`Retrying geolocation (attempt ${retryCountRef.current}/${maxRetries})...`);
+        
+        // Clear any existing timeouts
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
-      );
-    } catch (e) {
-      console.error('Error setting up geolocation:', e);
-      setError('Failed to initialize location services: ' + e.message);
-      setLoading(false);
-    }
-    
-    // Cleanup
-    return () => {
-      if (watchId) {
-        console.log('Cleaning up geolocation watch');
-        navigator.geolocation.clearWatch(watchId);
+        
+        // Exponential backoff for retries
+        const backoffTime = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 5000);
+        
+        // Retry with increased timeout and lower accuracy
+        timeoutId = setTimeout(() => {
+          navigator.geolocation.getCurrentPosition(
+            onSuccess,
+            onError,
+            {
+              enableHighAccuracy: false,
+              timeout: 30000,
+              maximumAge: 30000,
+              ...options
+            }
+          );
+        }, backoffTime);
+      } else if (retryCountRef.current >= maxRetries) {
+        setError('Unable to get location after multiple attempts. Please check your device settings and try again.');
+        setLoading(false);
       }
     };
-  }, [optionsKey]); // Only re-run if options change
+
+    // Start watching position with high accuracy
+    watchId = navigator.geolocation.watchPosition(
+      onSuccess,
+      onError,
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0,
+        ...options
+      }
+    );
+
+    // Cleanup function
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [optionsKey]);
 
   return { position, error, loading };
 };

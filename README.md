@@ -1,4 +1,7 @@
-# EchoMap Web Frontend
+# naviGram Project Requirements
+
+## Overview
+naviGram is an anonymous, location-based platform for sharing memories tied to physical spaces. Users leave voice notes, stories, or art at GPS coordinates, creating invisible emotional landmarks.
 
 ## Memory Creation Feature Setup
 

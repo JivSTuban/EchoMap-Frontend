@@ -3,8 +3,6 @@ import { AboutUs } from './components/AboutUs';
 import { MemoryCreation } from './components/MemoryCreation';
 import { MemoryEdit } from './components/MemoryEdit';
 import { RadiusFilter } from './components/RadiusFilter';
-import { PrivacyControls } from './components/PrivacyControls';
-import { FlaggingSystem } from './components/FlaggingSystem';
 import { Loading } from './components/Loading';
 import { LandingPage } from './components/LandingPage';
 import { Login } from './components/Login';
@@ -12,11 +10,14 @@ import { Register } from './components/Register';
 import { Navigation } from './components/Navigation';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Profile } from './components/Profile';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useEffect, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from './context/AuthContext';
+import { AdminPanel } from './components/AdminPanel';
+import { BannedUserPage } from './components/BannedUserPage';
+import { UserManagement } from './components/UserManagement';
 
 const Auth0CallbackHandler = () => {
   const { isAuthenticated, isLoading: auth0Loading, getAccessTokenSilently, user: auth0User } = useAuth0();
@@ -50,11 +51,17 @@ const Auth0CallbackHandler = () => {
         console.log("Auth0 callback handler - Exchanging token with backend");
         console.log("Auth0 user email:", auth0User?.email);
         
-        await exchangeAuth0Token(token);
+        const userData = await exchangeAuth0Token(token);
         
-        // Redirect to the map page
-        console.log("Auth0 callback handler - Authentication successful, redirecting to map");
-        navigate('/map');
+        // Check if user is admin and redirect accordingly
+        if (userData?.role === 'ADMIN') {
+          console.log("Auth0 callback handler - User is admin, redirecting to admin panel");
+          navigate('/admin');
+        } else {
+          // Redirect to the map page for non-admin users
+          console.log("Auth0 callback handler - Authentication successful, redirecting to map");
+          navigate('/map');
+        }
       } catch (err) {
         console.error("Auth0 callback processing error:", err);
         
@@ -104,6 +111,9 @@ const Auth0CallbackHandler = () => {
 };
 
 export const AppRoutes = () => {
+  const { isAuthenticated, isLoading: auth0Loading, getAccessTokenSilently, user: auth0User } = useAuth0();
+  const { user, exchangeAuth0Token } = useContext(AuthContext);
+
   return (
     <Navigation>
       <Routes>
@@ -116,10 +126,11 @@ export const AppRoutes = () => {
         <Route path="/create-memory" element={<ProtectedRoute><MemoryCreation /></ProtectedRoute>} />
         <Route path="/edit-memory/:id" element={<ProtectedRoute><MemoryEdit /></ProtectedRoute>} />
         <Route path="/radius-filter" element={<ProtectedRoute><RadiusFilter /></ProtectedRoute>} />
-        <Route path="/privacy-controls" element={<ProtectedRoute><PrivacyControls /></ProtectedRoute>} />
-        <Route path="/flagging-system" element={<ProtectedRoute><FlaggingSystem /></ProtectedRoute>} />
         <Route path="/loading" element={<ProtectedRoute><Loading /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
+        <Route path="/admin/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+        <Route path="/banned" element={<BannedUserPage />} />
       </Routes>
     </Navigation>
   );

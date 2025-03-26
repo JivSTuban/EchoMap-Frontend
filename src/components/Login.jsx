@@ -1,5 +1,5 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useContext, useEffect } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button, Input } from "@heroui/react";
 import axios from 'axios';
 import { useNotification } from '../context/NotificationContext';
@@ -17,8 +17,17 @@ export const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { addNotification } = useNotification();
-  const { login } = useContext(AuthContext);
+  const { login, user } = useContext(AuthContext);
+
+  // Redirect if user is already logged in
+  useEffect(() => {
+    if (user) {
+      const intendedPath = location.state?.from?.pathname || '/map';
+      navigate(intendedPath, { replace: true });
+    }
+  }, [user, navigate, location]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -37,9 +46,18 @@ export const Login = () => {
       });
       const { token } = response.data;
       debug('Login successful');
-      await login(token);
+      
+      // Check if user is banned before proceeding
+      const userData = await login(token);
+      if (!userData) {
+        // User is banned, no need to navigate as AuthContext will handle the redirect
+        return;
+      }
+      
       addNotification('Successfully logged in!', 'success');
-      navigate('/map');
+      // Navigate to the intended path or default to /map
+      const intendedPath = location.state?.from?.pathname || '/map';
+      navigate(intendedPath, { replace: true });
     } catch (error) {
       debug('Login failed', error);
       console.error('Login failed:', error);

@@ -2,46 +2,51 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { FlagModal } from './FlagModal';
+import { useNavigate } from 'react-router-dom';
+import { useNotification } from '../context/NotificationContext';
+import axios from 'axios';
 
-export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }) => {
+export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory, onMemoryDelete }) => {
+  // Context hooks
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { addNotification } = useNotification();
+  
+  // All state hooks
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [ownerProfilePic, setOwnerProfilePic] = useState(null);
+  const [token] = useState(localStorage.getItem('token'));
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [isFlagModalOpen, setIsFlagModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showBanModal, setShowBanModal] = useState(false);
+  const [banDuration, setBanDuration] = useState('7');
+  const [banUnit, setBanUnit] = useState('days');
+
+  // All ref hooks
   const containerRef = useRef(null);
+  const menuRef = useRef(null);
   const touchStartY = useRef(null);
   const touchEndY = useRef(null);
   const minSwipeDistance = 50; // Minimum distance required for a swipe
-  const [showTutorial, setShowTutorial] = useState(false);
-  
+
   // Sort memories by creation date (newest first)
   const sortedMemories = [...memories].sort((a, b) => {
     return new Date(b.createdAt) - new Date(a.createdAt);
   });
 
-  // Check if user has seen tutorial before and initialize showTutorial state
-  useEffect(() => {
-    if (isOpen && sortedMemories.length > 0) {
-      const hasTutorialBeenSeen = localStorage.getItem('echoMapMemoryTutorialSeen');
-      setShowTutorial(!hasTutorialBeenSeen);
-    }
-  }, [isOpen, sortedMemories]);
+  // Check if user is admin or moderator
+  const isAdminOrMod = user?.role === 'ADMIN' || user?.role === 'MODERATOR';
 
-  // Reset current index when memories change
-  useEffect(() => {
-    setCurrentIndex(0);
-  }, [memories]);
+  // Get current memory
+  const currentMemory = sortedMemories[currentIndex];
 
-  // Hide tutorial after 5 seconds or on first swipe
-  useEffect(() => {
-    if (showTutorial) {
-      const timer = setTimeout(() => {
-        setShowTutorial(false);
-        localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [showTutorial]);
-
+  // Define all callback functions
   const handleNextMemory = useCallback(() => {
+    if (!sortedMemories?.length) return;
     if (currentIndex < sortedMemories.length - 1) {
       setCurrentIndex(prev => prev + 1);
       if (showTutorial) {
@@ -49,9 +54,10 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
         localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
       }
     }
-  }, [currentIndex, sortedMemories.length, showTutorial]);
+  }, [currentIndex, sortedMemories?.length, showTutorial]);
 
   const handlePreviousMemory = useCallback(() => {
+    if (!sortedMemories?.length) return;
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
       if (showTutorial) {
@@ -61,7 +67,6 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
     }
   }, [currentIndex, showTutorial]);
 
-  // Touch event handlers
   const handleTouchStart = useCallback((e) => {
     touchStartY.current = e.touches[0].clientY;
     touchEndY.current = e.touches[0].clientY;
@@ -93,12 +98,59 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
       setShowTutorial(false);
       localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
     }
-  }, [handleNextMemory, handlePreviousMemory, showTutorial]);
+  }, [handleNextMemory, handlePreviousMemory, showTutorial, minSwipeDistance]);
 
-  // Keyboard event handlers
+  const handleCloseTutorial = useCallback(() => {
+    setShowTutorial(false);
+    localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
+  }, []);
+
+  // All useEffect hooks
+  useEffect(() => {
+    if (!currentMemory?.userId || !sortedMemories?.length) return;
+    const fetchOwnerProfile = async () => {
+      try {
+        const response = await axios.get(
+          `${import.meta.env.VITE_ECHOMAP_API_URL}/api/users/${currentMemory.userId}/profile`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setOwnerProfilePic(response.data || null);
+      } catch (error) {
+        console.error('Error fetching owner profile:', error);
+        setOwnerProfilePic(null);
+      }
+    };
+    fetchOwnerProfile();
+  }, [currentMemory?.userId, token]);
+
+  useEffect(() => {
+    if (isOpen && sortedMemories?.length > 0) {
+      const hasTutorialBeenSeen = localStorage.getItem('echoMapMemoryTutorialSeen');
+      setShowTutorial(!hasTutorialBeenSeen);
+    }
+  }, [isOpen, sortedMemories?.length]);
+
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [memories]);
+
+  useEffect(() => {
+    if (showTutorial) {
+      const timer = setTimeout(() => {
+        setShowTutorial(false);
+        localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showTutorial]);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!isOpen) return;
+      if (!isOpen || !sortedMemories?.length) return;
       
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         handleNextMemory();
@@ -108,7 +160,6 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
         onClose();
       }
       
-      // Hide tutorial on key navigation
       if (showTutorial) {
         setShowTutorial(false);
         localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
@@ -117,7 +168,23 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleNextMemory, handlePreviousMemory, onClose, showTutorial]);
+  }, [isOpen, handleNextMemory, handlePreviousMemory, onClose, showTutorial, sortedMemories?.length]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Early return if no memories
+  if (!sortedMemories?.length) return null;
 
   const formatDate = (dateString) => {
     if (!dateString) return "";
@@ -141,17 +208,147 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
     onClose();
   };
 
-  const handleCloseTutorial = () => {
-    setShowTutorial(false);
-    localStorage.setItem('echoMapMemoryTutorialSeen', 'true');
+  const handleFlag = async (memoryId, reason) => {
+    setIsSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('User must be logged in to flag memories');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/flags`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          memoryId,
+          reason,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to flag memory');
+      }
+
+      // Fetch updated memory data
+      const memoryResponse = await fetch(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/memories/${memoryId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!memoryResponse.ok) {
+        throw new Error('Failed to fetch updated memory data');
+      }
+
+      const updatedMemory = await memoryResponse.json();
+      
+      // Update the memory in the sortedMemories array
+      const updatedMemories = [...sortedMemories];
+      updatedMemories[currentIndex] = updatedMemory;
+      memories.splice(memories.indexOf(sortedMemories[currentIndex]), 1, updatedMemory);
+
+      // Show success notification
+      addNotification('Memory reported successfully', 'success');
+    } catch (error) {
+      console.error('Error flagging memory:', error);
+      addNotification(error.message || 'Failed to report memory', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  if (!sortedMemories?.length) return null;
-  const currentMemory = sortedMemories[currentIndex];
+  const handleDeleteMemory = async (memoryId) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('User must be logged in to delete memories');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/memories/${memoryId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete memory');
+      }
+
+      addNotification('Memory deleted successfully', 'success');
+      
+      if (onMemoryDelete) {
+        onMemoryDelete(memoryId);
+      }
+
+      if (sortedMemories.length === 1) {
+        onClose();
+      } else {
+        setCurrentIndex(prev => Math.min(prev, sortedMemories.length - 2));
+      }
+    } catch (error) {
+      console.error('Error deleting memory:', error);
+      addNotification(error.message || 'Failed to delete memory', 'error');
+    }
+    setShowDeleteConfirm(false);
+  };
+
+  const handleBanUser = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const userId = currentMemory.userId;
+      const endpoint = `${import.meta.env.VITE_ECHOMAP_API_URL}/api/admin/users/${userId}/${banUnit === 'permanent' ? 'ban-permanent' : 'ban'}`;
+      
+      const body = banUnit === 'permanent' 
+        ? {} 
+        : {
+            duration: parseInt(banDuration),
+            unit: banUnit
+          };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to ban user');
+      }
+
+      addNotification(
+        banUnit === 'permanent' 
+          ? 'User has been permanently banned' 
+          : `User banned for ${banDuration} ${banUnit}`, 
+        'success'
+      );
+      setShowBanModal(false);
+    } catch (error) {
+      console.error('Error banning user:', error);
+      addNotification(error.message || 'Failed to ban user', 'error');
+    }
+  };
+
+  const handleEditMemory = (memory) => {
+    onClose(); // Close the popup
+    navigate(`/edit-memory/${memory.id}`, { state: { memory } }); // Navigate to edit page with memory data
+  };
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-50" onClose={onClose} static>
         <Transition.Child
           as={Fragment}
           enter="ease-out duration-300"
@@ -300,55 +497,163 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
                       </div>
                     )}
 
-                    {/* Side action buttons (like TikTok) */}
-                    <div className="absolute right-3 bottom-20 flex flex-col items-center space-y-4">
-                      {/* View Details Button */}
-                      <button
-                        onClick={() => handleViewDetails(currentMemory)}
-                        className="flex flex-col items-center"
-                        aria-label="View full details"
-                      >
-                        <div className="w-10 h-10 bg-black/30 rounded-full flex items-center justify-center mb-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                    {/* Memory Info Overlay */}
+                    <div className="absolute bottom-0 left-0 right-16 bg-gradient-to-t from-black via-black/70 to-transparent px-6 py-8">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-semibold border border-white/30 overflow-hidden">
+                            {ownerProfilePic ? (
+                              <img 
+                                src={ownerProfilePic} 
+                                alt={currentMemory.name || "Anonymous"} 
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.parentElement.innerHTML = currentMemory.name ? currentMemory.name[0].toUpperCase() : 'A';
+                                }}
+                              />
+                            ) : (
+                              currentMemory.name ? currentMemory.name[0].toUpperCase() : 'A'
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-white text-lg font-semibold">
+                              {currentMemory.name || "Anonymous"}
+                            </h3>
+                            {isAdminOrMod && (
+                              <button
+                                onClick={() => setShowBanModal(true)}
+                                className="text-red-500 hover:text-red-400 transition-colors"
+                                title="Ban User"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-white text-xs">Details</span>
-                      </button>
+                        <div className="flex flex-col items-end">
+                          <span className="text-white/80 text-sm">
+                            {formatDate(currentMemory.createdAt)}
+                          </span>
+                          {isAdminOrMod && currentMemory.totalFlags > 0 && (
+                            <span className="text-red-400 text-sm mt-1">
+                              {currentMemory.totalFlags} report{currentMemory.totalFlags !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       
-                      {/* Memory Counter as profile pic with count */}
-                      <div className="flex flex-col items-center">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center mb-1 border-2 border-white">
-                          <span className="text-white text-xs font-bold">{sortedMemories.length}</span>
+                      <div className="space-y-2">
+                        <h4 className="text-white text-lg font-medium">
+                          {currentMemory.title || "Untitled Memory"}
+                        </h4>
+                        {currentMemory.description && (
+                          <p className="text-gray-200 text-base line-clamp-2">
+                            {currentMemory.description}
+                          </p>
+                        )}
+                        {isAdminOrMod && currentMemory.flagReason && (
+                          <div className="flex items-center space-x-2 bg-red-500/20 text-red-400 px-3 py-2 rounded-md mt-3">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                            </svg>
+                            <span className="text-sm font-medium">Report reason: {currentMemory.flagReason}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Memory counter indicator and menu */}
+                    <div className="absolute top-4 right-4">
+                      {currentMemory.userId === user?.id && (
+                        <div className="relative" ref={menuRef}>
+                          <button
+                            onClick={() => setIsMenuOpen(!isMenuOpen)}
+                            className="flex flex-col items-center"
+                            aria-label="More options"
+                          >
+                            <div className="w-12 h-12 bg-black/50 backdrop-blur-sm rounded-full flex items-center justify-center mb-1 hover:bg-black/60 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                              </svg>
+                            </div>
+                          </button>
+
+                          {/* Dropdown Menu */}
+                          {isMenuOpen && (
+                            <div className="absolute right-0 mt-2 w-56 bg-white/90 backdrop-blur-md rounded-lg shadow-lg py-1 z-50">
+                              <button
+                                onClick={() => {
+                                  handleEditMemory(currentMemory);
+                                  setIsMenuOpen(false);
+                                }}
+                                className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-white/80 flex items-center transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                                Edit Memory
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setShowDeleteConfirm(true);
+                                  setIsMenuOpen(false);
+                                }}
+                                className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-white/80 flex items-center transition-colors"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Delete Memory
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <span className="text-white text-xs">Memories</span>
-                      </div>
-                    </div>
-
-                    {/* Content Overlay - Bottom */}
-                    <div className="absolute bottom-0 left-0 right-12 p-4 bg-gradient-to-t from-black/80 to-transparent text-white">
-                      <h3 className="text-xl font-semibold mb-1">
-                        @{currentMemory.username || "anonymous"}
-                      </h3>
-                      <h4 className="text-base mb-2">
-                        {currentMemory.title || "Untitled Memory"}
-                      </h4>
-                      {currentMemory.description && (
-                        <p className="text-sm text-gray-200 mb-2 line-clamp-2">
-                          {currentMemory.description}
-                        </p>
                       )}
-                      <div className="flex items-center text-xs text-gray-300">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {formatDate(currentMemory.createdAt)}
-                      </div>
+                      
+                      {/* Show just the counter if not the memory owner */}
+                      {currentMemory.userId !== user?.id && (
+                        <div className="bg-black/50 backdrop-blur-sm text-white px-3 py-1.5 rounded-full text-sm font-medium">
+                          {currentIndex + 1}/{sortedMemories.length}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Memory counter indicator */}
-                    <div className="absolute top-4 right-4 bg-black/50 text-white px-2 py-1 rounded-full text-sm">
-                      {currentIndex + 1} / {sortedMemories.length}
+                    {/* Side action buttons */}
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center space-y-6">
+                      {/* Report Button - Only show if user is NOT the memory owner */}
+                      {currentMemory.userId !== user?.id && (
+                        <div className="flex flex-col items-center">
+                          <button
+                            onClick={() => setIsFlagModalOpen(true)}
+                            className="w-12 h-12 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center mb-1 hover:bg-black/60 transition-colors"
+                            title="Report memory"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+                            </svg>
+                          </button>
+                          <span className="text-white text-xs font-medium">Report</span>
+                        </div>
+                      )}
+
+                      {/* Delete Button - Show for admins/mods and memory owner */}
+                      {(isAdminOrMod || currentMemory.userId === user?.id) && (
+                        <div className="flex flex-col items-center">
+                          <button
+                            onClick={() => setShowDeleteConfirm(true)}
+                            className="w-12 h-12 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center mb-1 hover:bg-black/60 transition-colors"
+                            title="Delete memory"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                          <span className="text-white text-xs font-medium">Delete</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -368,6 +673,125 @@ export const MemoryClusterPopup = ({ memories, isOpen, onClose, onSelectMemory }
             </Transition.Child>
           </div>
         </div>
+
+        {/* Add FlagModal */}
+        <FlagModal
+          isOpen={isFlagModalOpen}
+          onClose={() => setIsFlagModalOpen(false)}
+          onFlag={handleFlag}
+          memoryId={memories[currentIndex]?.id}
+        />
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Delete</h3>
+              <p className="text-gray-500 mb-6">Are you sure you want to delete this memory? This action cannot be undone.</p>
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-gray-500 hover:text-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteMemory(currentMemory.id)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Ban User Modal */}
+        <Transition appear show={showBanModal} as={Fragment}>
+          <Dialog 
+            as="div" 
+            className="relative z-50" 
+            onClose={(e) => {
+              e.stopPropagation();
+              setShowBanModal(false);
+            }}
+            static
+          >
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0"
+              enterTo="opacity-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100"
+              leaveTo="opacity-0"
+            >
+              <div className="fixed inset-0 bg-black bg-opacity-50" />
+            </Transition.Child>
+
+            <div className="fixed inset-0 overflow-y-auto">
+              <div className="flex min-h-full items-center justify-center p-4 text-center">
+                <Transition.Child
+                  as={Fragment}
+                  enter="ease-out duration-300"
+                  enterFrom="opacity-0 scale-95"
+                  enterTo="opacity-100 scale-100"
+                  leave="ease-in duration-200"
+                  leaveFrom="opacity-100 scale-100"
+                  leaveTo="opacity-0 scale-95"
+                >
+                  <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-lg bg-white p-6 text-left align-middle shadow-xl transition-all">
+                    <Dialog.Title as="h3" className="text-lg font-medium text-gray-900 mb-4">
+                      Ban User
+                    </Dialog.Title>
+                    <p className="text-gray-500 mb-4">Select ban duration for {currentMemory.name || "Anonymous"}:</p>
+                    <div className="flex space-x-4 mb-6">
+                      {banUnit !== 'permanent' && (
+                        <input
+                          type="number"
+                          min="1"
+                          value={banDuration}
+                          onChange={(e) => setBanDuration(e.target.value)}
+                          className="w-20 px-2 py-1 border rounded"
+                        />
+                      )}
+                      <select
+                        value={banUnit}
+                        onChange={(e) => setBanUnit(e.target.value)}
+                        className="px-2 py-1 border rounded"
+                      >
+                        <option value="days">Days</option>
+                        <option value="weeks">Weeks</option>
+                        <option value="months">Months</option>
+                        <option value="permanent">Permanent</option>
+                      </select>
+                    </div>
+                    <div className="flex justify-end space-x-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowBanModal(false);
+                        }}
+                        className="px-4 py-2 text-gray-500 hover:text-gray-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBanUser();
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                      >
+                        Ban User
+                      </button>
+                    </div>
+                  </Dialog.Panel>
+                </Transition.Child>
+              </div>
+            </div>
+          </Dialog>
+        </Transition>
       </Dialog>
     </Transition>
   );

@@ -74,6 +74,11 @@ export const Navigation = ({ children }) => {
               Profile
             </Link>
           )}
+          {isAuthenticated && (user?.role === 'ADMIN' || user?.role === 'MODERATOR') && location.pathname !== '/admin' && (
+            <Link to="/admin" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">
+              {user?.role === 'ADMIN' ? 'Admin Panel' : 'Moderator Panel'}
+            </Link>
+          )}
           {!isAuthenticated && renderAuthLinks()}
           {isAuthenticated && (
             <Button
@@ -107,8 +112,6 @@ export const Navigation = ({ children }) => {
                     <Link to="/map" className="block text-sm text-gray-600 hover:text-gray-900 transition-colors">Map</Link>
                     <Link to="/create-memory" className="block text-sm text-gray-600 hover:text-gray-900 transition-colors">Create Memory</Link>
                     <Link to="/profile" className="block text-sm text-gray-600 hover:text-gray-900 transition-colors">Profile</Link>
-                    <Link to="/privacy-controls" className="block text-sm text-gray-600 hover:text-gray-900 transition-colors">Privacy Controls</Link>
-                    <Link to="/flagging-system" className="block text-sm text-gray-600 hover:text-gray-900 transition-colors">Flagging System</Link>
                   </div>
                 </div>
               )}

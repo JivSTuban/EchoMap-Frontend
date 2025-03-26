@@ -1,15 +1,26 @@
-import { createContext, useState, useEffect } from 'react';
+import { createContext, useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { getDecodedToken, isAuthenticated } from '../utils/auth';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const DEBUG = import.meta.env.MODE === 'development';
 
 export const AuthContext = createContext();
 
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const debug = (message, data = null) => {
     if (DEBUG) {
@@ -23,38 +34,77 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  useEffect(() => {
-    const initializeAuth = async () => {
-      debug('Initializing auth state');
-      const storedToken = localStorage.getItem('token');
-      
-      if (storedToken) {
-        debug('Found token in localStorage');
-        try {
-          // Set the token in axios defaults
-          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-          setToken(storedToken);
-          
-          // Verify the token by fetching user data
-          const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
-          const userData = response.data;
-          debug('User data fetched successfully:', userData);
-          
-          setUser(userData);
-        } catch (error) {
-          debug('Failed to verify token:', error?.response?.data || error?.message);
-          // If token verification fails, clean up
-          localStorage.removeItem('token');
-          delete axios.defaults.headers.common['Authorization'];
-          setToken(null);
-        }
-      }
-      
-      setLoading(false);
-    };
+  const checkUserBanStatus = async (userData, tokenToUse = token) => {
+    if (!userData) return;
+    
+    // Don't check ban status if we're already on the banned page
+    if (location.pathname === '/banned') return;
 
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_ECHOMAP_API_URL}/api/users/${userData.id}/ban-status`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenToUse}`,
+          },
+        }
+      );
+
+      if (response.data.banned) {
+        console.log('[AuthContext] User is banned, redirecting to banned page');
+        navigate('/banned', { 
+          state: { 
+            banEndDate: response.data.banEndDate,
+            reason: response.data.banReason 
+          }
+        });
+      }
+    } catch (error) {
+      console.error('[AuthContext] Error checking ban status:', error);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUser(null);
+    navigate('/login');
+  };
+
+  const initializeAuth = async () => {
+    console.log('[AuthContext] Initializing auth state');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const userData = response.data;
+      console.log('[AuthContext] User data fetched successfully:', userData);
+      setUser(userData);
+      await checkUserBanStatus(userData);
+    } catch (error) {
+      console.error('[AuthContext] Error fetching user data:', error);
+      localStorage.removeItem('token');
+      setToken(null);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     initializeAuth();
-  }, []);
+  }, [navigate, token]);
 
   const login = async (newToken) => {
     try {
@@ -71,6 +121,9 @@ export const AuthProvider = ({ children }) => {
       const response = await axios.get(`${import.meta.env.VITE_ECHOMAP_API_URL}/api/auth/me`);
       const userData = response.data;
       debug('Login successful, user data:', userData);
+      
+      // Check ban status with the new token
+      await checkUserBanStatus(userData, newToken);
       
       setUser(userData);
       return userData;
@@ -142,14 +195,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    debug('Logging out user');
-    localStorage.removeItem('token');
-    delete axios.defaults.headers.common['Authorization'];
-    setToken(null);
-    setUser(null);
-  };
-
   const refreshUser = async () => {
     if (!token) {
       debug('Refresh user failed: No token available');
@@ -179,8 +224,12 @@ export const AuthProvider = ({ children }) => {
       
       const userData = response.data;
       debug('User data refreshed:', userData);
-      setUser(userData);
-      return userData;
+      
+      if (!checkUserBanStatus(userData)) {
+        setUser(userData);
+        return userData;
+      }
+      return null;
     } catch (error) {
       debug('Failed to refresh user data:', error?.response?.data || error?.message);
       if (error.response?.status === 401) {
@@ -201,7 +250,8 @@ export const AuthProvider = ({ children }) => {
       exchangeOktaToken,
       exchangeAuth0Token,
       refreshUser,
-      token 
+      token,
+      initializeAuth
     }}>
       {children}
     </AuthContext.Provider>

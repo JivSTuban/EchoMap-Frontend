@@ -1,10 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { PhotoIcon } from '@heroicons/react/24/outline';
 import { LocationPicker } from './LocationPicker';
 import { MediaPreview } from './MediaPreview';
-import { PrivacyControls } from './PrivacyControls';
 import { uploadToCloudinary } from '../config/cloudinary';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from '../context/NotificationContext';
@@ -255,9 +254,20 @@ export const MemoryCreation = () => {
               )}
             </div>
 
-            <div className="p-4 bg-white/50 rounded-lg border border-gray-200">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Privacy Settings</h3>
-              <PrivacyControls onPrivacyChange={setPrivacy} disabled={isUploading} />
+            {/* Privacy Settings */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Privacy
+              </label>
+              <select
+                value={privacy}
+                onChange={(e) => setPrivacy(e.target.value)}
+                className={inputStyle}
+              >
+                <option value="PUBLIC">Public</option>
+                <option value="PRIVATE">Private</option>
+                <option value="FOLLOWERS">Followers Only</option>
+              </select>
             </div>
           </div>
         </div>

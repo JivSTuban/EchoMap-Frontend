@@ -4,7 +4,6 @@ import { useDropzone } from 'react-dropzone';
 import { PhotoIcon } from '@heroicons/react/24/outline';
 import { LocationPicker } from './LocationPicker';
 import { MediaPreview } from './MediaPreview';
-import { PrivacyControls } from './PrivacyControls';
 import { uploadToCloudinary } from '../config/cloudinary';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from '../context/NotificationContext';
@@ -367,10 +366,15 @@ export const MemoryEdit = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Privacy
               </label>
-              <PrivacyControls 
-                value={privacy} 
-                onChange={setPrivacy} 
-              />
+              <select
+                value={privacy}
+                onChange={(e) => setPrivacy(e.target.value)}
+                className={inputStyle}
+              >
+                <option value="PUBLIC">Public</option>
+                <option value="PRIVATE">Private</option>
+                <option value="FRIENDS">Friends Only</option>
+              </select>
             </div>
 
             {/* Submit Button */}

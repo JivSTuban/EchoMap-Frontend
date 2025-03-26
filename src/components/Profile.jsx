@@ -76,13 +76,13 @@ export const Profile = () => {
     setError(null);
     
     try {
-      const imageUrl = await uploadToCloudinary(file, (progress) => {
+      const { url } = await uploadToCloudinary(file, (progress) => {
         setUploadProgress(progress);
       });
       
       setFormData(prev => ({
         ...prev,
-        profilePicture: imageUrl
+        profilePicture: url
       }));
       
       addNotification('Profile picture uploaded successfully.', 'success');
