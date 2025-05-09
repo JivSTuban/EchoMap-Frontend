@@ -60,25 +60,36 @@ export const UserManagement = () => {
 
   const handleUpdateRole = async (userId, newRole) => {
     try {
-      await API.put(`/api/admin/users/${userId}/role`, { role: newRole });
+      // Use newRole parameter name as expected by the backend
+      await API.put(`/api/admin/users/${userId}/role?newRole=${newRole}`);
+      
       addNotification('User role updated successfully', 'success');
       fetchUsers();
     } catch (err) {
       console.error('Failed to update user role:', err);
-      addNotification('Failed to update user role', 'error');
+      addNotification(err.response?.data?.message || 'Failed to update user role', 'error');
     }
   };
 
   const handleDeleteUser = async () => {
+    if (!selectedUser || !selectedUser.id) {
+      addNotification('Invalid user selected for deletion', 'error');
+      setShowDeleteConfirm(false);
+      return;
+    }
+    
     try {
-      await API.delete(`/api/admin/users/${selectedUser.id}`);
+      // Update to use the correct endpoint: /api/users/{id} instead of /api/admin/users/{id}
+      await API.delete(`/api/users/${selectedUser.id}`);
       addNotification('User deleted successfully', 'success');
       setShowDeleteConfirm(false);
       setSelectedUser(null);
       fetchUsers();
     } catch (err) {
       console.error('Failed to delete user:', err);
-      addNotification('Failed to delete user', 'error');
+      // Use a more specific error message for debugging
+      const errorMessage = err.response?.data?.message || 'Failed to delete user';
+      addNotification(errorMessage, 'error');
     }
   };
 
@@ -257,7 +268,7 @@ export const UserManagement = () => {
           <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
             <h2 className="text-xl font-bold mb-4">Confirm Delete</h2>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to delete user "{selectedUser.username}"? This action cannot be undone.
+              Are you sure you want to delete user &quot;{selectedUser.username}&quot;? This action cannot be undone.
             </p>
             <div className="flex justify-end space-x-3">
               <button

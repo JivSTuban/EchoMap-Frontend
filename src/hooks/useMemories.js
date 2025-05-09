@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import API from '../services/api';
 import { useGeolocation } from './useGeolocation';
 
-export const useMemories = (radius = 10) => {
+export const useMemories = (radius = 10, userId = null) => {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -10,6 +10,21 @@ export const useMemories = (radius = 10) => {
 
   useEffect(() => {
     const fetchMemories = async () => {
+      if (userId) {
+        try {
+          setLoading(true);
+          setError(null);
+          const response = await API.get(`/api/memories/user/${userId}`);
+          setMemories(response.data);
+        } catch (err) {
+          console.error('Error fetching user memories:', err);
+          setError('Failed to load memories');
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
       if (!position) return;
       
       try {
@@ -33,10 +48,10 @@ export const useMemories = (radius = 10) => {
       }
     };
 
-    if (position) {
+    if (userId || position) {
       fetchMemories();
     }
-  }, [position, radius]);
+  }, [position, radius, userId]);
 
-  return { memories, loading, error };
+  return { memories, setMemories, loading, error };
 };

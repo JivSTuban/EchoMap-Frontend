@@ -1,7 +1,6 @@
 import { MapView } from './components/Map';
 import { AboutUs } from './components/AboutUs';
 import { MemoryCreation } from './components/MemoryCreation';
-import { MemoryEdit } from './components/MemoryEdit';
 import { RadiusFilter } from './components/RadiusFilter';
 import { Loading } from './components/Loading';
 import { LandingPage } from './components/LandingPage';
@@ -10,7 +9,7 @@ import { Register } from './components/Register';
 import { Navigation } from './components/Navigation';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Profile } from './components/Profile';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useEffect, useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -21,7 +20,7 @@ import { UserManagement } from './components/UserManagement';
 
 const Auth0CallbackHandler = () => {
   const { isAuthenticated, isLoading: auth0Loading, getAccessTokenSilently, user: auth0User } = useAuth0();
-  const { user, exchangeAuth0Token } = useContext(AuthContext);
+  const { exchangeAuth0Token } = useContext(AuthContext);
   const navigate = useNavigate();
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
@@ -111,9 +110,6 @@ const Auth0CallbackHandler = () => {
 };
 
 export const AppRoutes = () => {
-  const { isAuthenticated, isLoading: auth0Loading, getAccessTokenSilently, user: auth0User } = useAuth0();
-  const { user, exchangeAuth0Token } = useContext(AuthContext);
-
   return (
     <Navigation>
       <Routes>
@@ -124,7 +120,6 @@ export const AppRoutes = () => {
         <Route path="/about" element={<AboutUs />} />
         <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
         <Route path="/create-memory" element={<ProtectedRoute><MemoryCreation /></ProtectedRoute>} />
-        <Route path="/edit-memory/:id" element={<ProtectedRoute><MemoryEdit /></ProtectedRoute>} />
         <Route path="/radius-filter" element={<ProtectedRoute><RadiusFilter /></ProtectedRoute>} />
         <Route path="/loading" element={<ProtectedRoute><Loading /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

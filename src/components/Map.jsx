@@ -13,6 +13,7 @@ import { useGeolocation } from '../hooks/useGeolocation';
 import { MemoryClusterPopup } from './MemoryClusterPopup';
 import API from '../services/api';
 import 'ol/ol.css';
+import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 export const MapView = () => {
   const mapRef = useRef();
@@ -20,6 +21,8 @@ export const MapView = () => {
   const [selectedMemory, setSelectedMemory] = useState(null);
   const [clusterMemories, setClusterMemories] = useState([]);
   const [memories, setMemories] = useState([]);
+  const [filteredMemories, setFilteredMemories] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const lastFetchPosition = useRef(null);
@@ -41,6 +44,25 @@ export const MapView = () => {
   // Use the geolocation hook with stable options
   const { position, error: geoError, loading: geoLoading, requestLocation } = useGeolocation(geoOptions);
   const [showClusterPopup, setShowClusterPopup] = useState(false);
+
+  // Filter memories when search query changes
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredMemories(memories);
+      return;
+    }
+    
+    const lowerCaseQuery = searchQuery.toLowerCase().trim();
+    const filtered = memories.filter(memory => {
+      const titleMatch = memory.title?.toLowerCase().includes(lowerCaseQuery);
+      const descriptionMatch = memory.description?.toLowerCase().includes(lowerCaseQuery);
+      const nameMatch = memory.name?.toLowerCase().includes(lowerCaseQuery);
+      
+      return titleMatch || descriptionMatch || nameMatch;
+    });
+    
+    setFilteredMemories(filtered);
+  }, [searchQuery, memories]);
 
   // Add some debugging to help us understand what's happening with geolocation
   useEffect(() => {
@@ -150,10 +172,11 @@ export const MapView = () => {
         });
         
         // Use the /api/memories/web/all endpoint to fetch all memories
-        const response = await API.get('/api/memories/web/all');
+        const response = await API.get('/api/memories/public/all');
         
         console.log(`Found ${response.data.length} memories`);
         setMemories(response.data);
+        setFilteredMemories(response.data);
         
         // Mark that we've successfully loaded memories
         memoryFetchedRef.current = true;
@@ -295,11 +318,11 @@ export const MapView = () => {
     };
   }, [getDistanceBetweenPositions, memories]);
 
-  // Update memory markers on the map when memories change
+  // Update memory markers on the map when filtered memories change
   useEffect(() => {
-    if (!mapInstance.current || !memories || memories.length === 0) return;
+    if (!mapInstance.current || !filteredMemories || filteredMemories.length === 0) return;
     
-    console.log('Updating map with memories:', memories.length);
+    console.log('Updating map with filtered memories:', filteredMemories.length);
     
     const map = mapInstance.current;
     const memoryLayer = map.getLayers().getArray().find(layer => 
@@ -314,7 +337,7 @@ export const MapView = () => {
     const source = memoryLayer.getSource();
     source.clear();
     
-    memories.forEach(memory => {
+    filteredMemories.forEach(memory => {
       if (!memory.latitude || !memory.longitude) {
         console.warn('Memory missing coordinates:', memory.id);
         return;
@@ -332,7 +355,7 @@ export const MapView = () => {
         console.error('Error adding memory feature:', e, memory);
       }
     });
-  }, [memories]);
+  }, [filteredMemories]);
 
   // Handle closing memory details modal
   const closeClusterPopup = () => {
@@ -351,6 +374,7 @@ export const MapView = () => {
   const handleMemoryDelete = useCallback((memoryId) => {
     // Update the memories state to remove the deleted memory
     setMemories(prevMemories => prevMemories.filter(memory => memory.id !== memoryId));
+    setFilteredMemories(prevMemories => prevMemories.filter(memory => memory.id !== memoryId));
     
     // Remove the feature from the vector layer
     const memoryLayer = mapInstance.current.getLayers().getArray().find(layer => layer instanceof VectorLayer);
@@ -386,13 +410,45 @@ export const MapView = () => {
     });
   }, [position]);
 
+  // Clear search query
+  const handleClearSearch = () => {
+    setSearchQuery('');
+  };
+
   return (
     <div className="relative w-full h-[calc(100vh-4rem)]">
+      {/* Search Bar */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-full max-w-md z-10 px-4">
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search memories by title, description or user"
+            className="w-full px-4 py-2 pl-10 pr-10 rounded-full border border-gray-300 shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          {searchQuery && (
+            <button
+              onClick={handleClearSearch}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <div className="mt-1 text-center text-sm text-gray-700 bg-white/80 rounded-md p-1">
+            Found {filteredMemories.length} {filteredMemories.length === 1 ? 'memory' : 'memories'}
+          </div>
+        )}
+      </div>
+
       <div ref={mapRef} className="w-full h-full" />
       
       {/* Loading indicator */}
       {loading && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-md">
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-full shadow-md">
           <div className="flex items-center space-x-2">
             <svg className="animate-spin h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -405,7 +461,7 @@ export const MapView = () => {
 
       {/* Error message */}
       {error && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-red-50 text-red-700 px-4 py-2 rounded-full shadow-md">
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-red-50 text-red-700 px-4 py-2 rounded-full shadow-md">
           <div className="flex items-center space-x-2">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
@@ -425,6 +481,8 @@ export const MapView = () => {
           memoryFetchedRef.current = false;
           // Force re-render to trigger useEffect
           setMemories([]);
+          setFilteredMemories([]);
+          setSearchQuery('');
         }}
         aria-label="Refresh memories"
       >
@@ -434,10 +492,10 @@ export const MapView = () => {
       </button>
 
       {/* Memory Count */}
-      {memories.length > 0 && (
+      {filteredMemories.length > 0 && (
         <div className="absolute bottom-4 left-4 bg-white px-4 py-2 rounded-full shadow-md z-10">
           <span className="text-sm font-medium">
-            {memories.length} {memories.length === 1 ? 'memory' : 'memories'} nearby
+            {searchQuery ? `${filteredMemories.length} of ${memories.length}` : filteredMemories.length} {filteredMemories.length === 1 ? 'memory' : 'memories'} nearby
           </span>
         </div>
       )}

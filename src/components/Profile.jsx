@@ -1,149 +1,76 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { AuthContext } from '../context/AuthContext';
-import { uploadToCloudinary } from '../config/cloudinary';
-import { useNotification } from '../context/NotificationContext';
-import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { useMemories } from '../hooks/useMemories';
+import { EditProfileModal } from './EditProfileModal';
+import { EditMemoryModal } from './EditMemoryModal';
+import { useNotification } from '../context/NotificationContext';
+import { CommentsSection } from './CommentsSection';
 
+const baseURL = import.meta.env.VITE_ECHOMAP_API_URL;
 export const Profile = () => {
-  const { user, token } = useAuth();
-  const { refreshUser } = useContext(AuthContext);
+  const { user } = useAuth();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isEditMemoryModalOpen, setIsEditMemoryModalOpen] = useState(false);
+  const [selectedMemory, setSelectedMemory] = useState(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
+  const [followCountsLoading, setFollowCountsLoading] = useState(false);
   const { addNotification } = useNotification();
-  const [isEditing, setIsEditing] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    username: '',
-    profilePicture: '',
-    phoneNumber: '',
-    usernameWarningShown: false
-  });
-  const [error, setError] = useState(null);
-
+  const token = window.localStorage.getItem("token");
+  const [previewMemory, setPreviewMemory] = useState(null);
+  const [memoryToDelete, setMemoryToDelete] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  
   useEffect(() => {
-    if (user) {
-      setFormData({
-        name: user.name || '',
-        email: user.email || '',
-        username: user.username || '',
-        profilePicture: user.profilePicture || '',
-        phoneNumber: user.phoneNumber || '',
-        usernameWarningShown: false
-      });
-    }
-  }, [user]);
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    
-    // Show warning if username is being changed
-    if (name === 'username' && user.username !== value && !formData.usernameWarningShown) {
-      setFormData(prev => ({
-        ...prev,
-        usernameWarningShown: true
-      }));
-      setError(
-        "Important: Changing your username may cause issues with social logins (Auth0, etc). " +
-        "If you use social login, it's recommended to keep your original username."
-      );
-    }
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File size exceeds 5MB. Please choose a smaller image.');
-      return;
-    }
-    
-    // Validate file type
-    if (!file.type.match('image.*')) {
-      setError('Please select an image file.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const { url } = await uploadToCloudinary(file, (progress) => {
-        setUploadProgress(progress);
-      });
-      
-      setFormData(prev => ({
-        ...prev,
-        profilePicture: url
-      }));
-      
-      addNotification('Profile picture uploaded successfully.', 'success');
-    } catch (error) {
-      setError('Failed to upload image. Please try again.');
-      console.error('Upload error:', error);
-    } finally {
-      setLoading(false);
-      setUploadProgress(0);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Log what we're sending to ensure name is included
-      console.log('Updating profile with data:', formData);
-      
-      // For social login accounts, prevent changing username by ensuring original value is sent
-      const dataToSubmit = { ...formData };
-      if (user.socialLogin) {
-        dataToSubmit.username = user.username;
-        dataToSubmit.email = user.email;
-      }
-      
-      const response = await axios.put(
-        `${import.meta.env.VITE_ECHOMAP_API_URL}/api/users/${user.id}`,
-        dataToSubmit,
-        {
+    const fetchFollowCounts = async () => {
+      setFollowCountsLoading(true);
+      try {
+        const response = await fetch(`${baseURL}/api/users/${user?.id}/follow-counts`, {
           headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
           }
+        });
+        const data = await response.json();
+        if (data.success) {
+          setFollowCounts(data.data);
         }
-      );
-      
-      console.log('Profile update response:', response.data);
-      
-      // Refresh the user data in the auth context
-      try {
-        const userData = await refreshUser();
-        console.log('User data refreshed in context:', userData);
-      } catch (refreshError) {
-        console.error('Failed to refresh user data in context:', refreshError);
+      } catch (error) {
+        console.error('Error fetching follow counts:', error);
+      } finally {
+        setFollowCountsLoading(false);
       }
-      
-      const usernameChanged = formData.username !== user.username;
-      
-      if (usernameChanged) {
-        addNotification('Profile updated successfully. Note: You will need to use your new username on your next login.', 'success');
-      } else {
-        addNotification('Profile updated successfully.', 'success');
-      }
+    };
+
+    if (user?.id) {
+      fetchFollowCounts();
+    }
+  }, [user?.id]);
+
+  const { memories, setMemories, loading: memoriesLoading } = useMemories(null, user?.id);
+
+  const handleMemoryUpdate = (updatedMemory) => {
+    setMemories(memories.map(memory => 
+      memory.id === updatedMemory.id ? updatedMemory : memory
+    ));
+  };
+
+  const handleDeleteMemory = async (memoryId) => {
+    try {
+      await fetch(`${baseURL}/api/memories/${memoryId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      setMemories(memories.filter(m => m.id !== memoryId));
+      addNotification('Memory deleted successfully', 'success');
     } catch (error) {
-      console.error('Update error:', error);
-      setError(error.response?.data?.message || 'Failed to update profile. Please try again.');
+      console.error('Error deleting memory:', error);
+      addNotification('Failed to delete memory', 'error');
     } finally {
-      setLoading(false);
+      setShowDeleteConfirm(false);
+      setMemoryToDelete(null);
     }
   };
 
@@ -161,169 +88,276 @@ export const Profile = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8 bg-white shadow-md rounded-lg my-8">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">My Profile</h1>
-      
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      {/* Profile Header */}
+      <div className="flex flex-col md:flex-row mb-8 items-center md:items-start">
+        {/* Profile Picture */}
+        <div className="w-32 h-32 md:w-40 md:h-40 flex-shrink-0 mb-4 md:mb-0 md:mr-8">
+          <img
+            src={user.profilePicture || '/iconLOGO.png'}
+            alt="Profile"
+            className="w-full h-full rounded-full object-cover border-2 border-gray-200"
+          />
         </div>
-      )}
-      
-      <div className="flex flex-col md:flex-row gap-8">
-        <div className="md:w-1/3">
-          <div className="flex flex-col items-center">
-            <div className="relative w-40 h-40 mb-4">
-              {formData.profilePicture ? (
-                <img 
-                  src={formData.profilePicture} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover rounded-full border-4 border-gray-200"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gray-200 rounded-full text-gray-500">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
+
+        {/* Profile Info */}
+        <div className="flex-grow">
+          <div className="flex items-center mb-4 justify-center md:justify-start">
+            <h1 className="text-2xl font-light mr-4">{user.name||user.username}</h1>
+            <div className="relative">
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="px-4 py-2 border border-gray-300 rounded font-semibold text-sm hover:bg-gray-50"
+              >
+                Edit Profile
+              </button>
+              {isDropdownOpen && (
+                <div className="absolute right-0 mt-2 py-2 w-48 bg-white rounded-lg shadow-xl z-20 border border-gray-200">
+                  <button
+                    onClick={() => {
+                      setIsEditModalOpen(true);
+                      setIsDropdownOpen(false);
+                    }}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                  >
+                    Edit Profile
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Handle settings
+                      setIsDropdownOpen(false);
+                    }}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                  >
+                    Settings
+                  </button>
                 </div>
               )}
-              
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full">
-                <label className="cursor-pointer p-2 bg-white rounded-full">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={handleFileChange}
-                    disabled={loading}
-                  />
-                </label>
-              </div>
             </div>
-            
-            {loading && uploadProgress > 0 && (
-              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-4">
-                <div 
-                  className="bg-blue-600 h-2.5 rounded-full" 
-                  style={{ width: `${uploadProgress}%` }}
-                ></div>
-              </div>
-            )}
+          </div>
 
-            <h2 className="text-xl font-semibold text-gray-800">{formData.name}</h2>
-            <p className="text-gray-600">@{formData.username}</p>
+          <div className="flex space-x-8 justify-center md:justify-start mb-4">
+            <div>
+              <span className="font-semibold">{memories?.length || 0}</span>{" "}
+              <span className="text-gray-500">memories</span>
+            </div>
+            <div>
+              <span className="font-semibold">
+                {followCountsLoading ? "..." : followCounts.followers}
+              </span>{" "}
+              <span className="text-gray-500">followers</span>
+            </div>
+            <div>
+              <span className="font-semibold">
+                {followCountsLoading ? "..." : followCounts.following}
+              </span>{" "}
+              <span className="text-gray-500">following</span>
+            </div>
+          </div>
+
+          <div className="text-center md:text-left">
+            <h2 className="font-semibold">@{user.username}</h2>
+            {user.bio && <p className="text-gray-600">{user.bio}</p>}
           </div>
         </div>
-        
-        <div className="md:w-2/3">
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 gap-4">
-              <div className="border-b pb-4 mb-2">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Login Information</h3>
-                <div className="flex items-center mb-2">
-                  <span className="font-medium text-gray-700 min-w-32">Login Method:</span>
-                  <span className="text-gray-600">
-                    {user.socialLogin 
-                      ? `Social Login (${user.socialProvider || 'External Provider'})` 
-                      : 'Email & Password'}
-                  </span>
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input
-                  type="text"
-                  name="username"
-                  value={formData.username}
-                  onChange={handleInputChange}
-                  disabled={true}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                {user.socialLogin && (
-                  <p className="mt-1 text-sm text-gray-500">Username cannot be changed for social login accounts.</p>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  disabled={loading || user.socialLogin}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                {user.socialLogin && (
-                  <p className="mt-1 text-sm text-gray-500">Email cannot be changed for social login accounts.</p>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-                <input
-                  type="tel"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleInputChange}
-                  disabled={loading}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              
-              <div className="mt-4 flex justify-end">
-                <div className="flex space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError(null);
-                      // Reset form data to original user values
-                      if (user) {
-                        setFormData({
-                          name: user.name || '',
-                          email: user.email || '',
-                          username: user.username || '',
-                          profilePicture: user.profilePicture || '',
-                          phoneNumber: user.phoneNumber || '',
-                          usernameWarningShown: false
-                        });
-                      }
-                    }}
-                    disabled={loading}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400"
-                  >
-                    {loading ? 'Saving...' : 'Save Changes'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
       </div>
+
+      {/* Memories Grid */}
+      <div className="border-t border-gray-200 pt-4">
+        <h3 className="text-sm font-semibold text-gray-400 uppercase mb-4">My Memories</h3>
+        {memoriesLoading ? (
+          <div className="flex justify-center items-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          </div>
+        ) : memories?.length > 0 ? (
+          <div className="grid grid-cols-3 gap-1 md:gap-4">
+            {memories.map((memory) => (
+              <div key={memory.id} className="relative pt-[100%] group">
+                <div className="absolute inset-0">
+                  <img
+                    src={memory.mediaUrl}
+                    alt={memory.description}
+                    className="w-full h-full object-cover cursor-pointer"
+                    onClick={() => setPreviewMemory(memory)}
+                  />
+                  <div className="absolute top-2 right-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const menu = document.getElementById(`memory-menu-${memory.id}`);
+                        menu.classList.toggle('hidden');
+                      }}
+                      className="p-1 rounded-full bg-black bg-opacity-50 text-white hover:bg-opacity-75"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                      </svg>
+                    </button>
+                    <div
+                      id={`memory-menu-${memory.id}`}
+                      className="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50"
+                    >
+                      <div className="py-1">
+                        <button
+                          onClick={() => {
+                            setSelectedMemory(memory);
+                            setIsEditMemoryModalOpen(true);
+                            document.getElementById(`memory-menu-${memory.id}`).classList.add('hidden');
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMemoryToDelete(memory);
+                            setShowDeleteConfirm(true);
+                            document.getElementById(`memory-menu-${memory.id}`).classList.add('hidden');
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No memories yet</p>
+          </div>
+        )}
+      </div>
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        user={user}
+      />
+
+      {/* Edit Memory Modal */}
+      {selectedMemory && (
+        <EditMemoryModal
+          isOpen={isEditMemoryModalOpen}
+          onClose={() => {
+            setIsEditMemoryModalOpen(false);
+            setSelectedMemory(null);
+          }}
+          memory={selectedMemory}
+          onMemoryUpdate={handleMemoryUpdate}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && memoryToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white/90 backdrop-blur-md rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl border border-white/50">
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">Confirm Delete</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this memory? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setMemoryToDelete(null);
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteMemory(memoryToDelete.id)}
+                className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 shadow-md font-medium"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Memory Preview Modal */}
+      {previewMemory && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+          <div className="max-w-7xl w-full mx-4 bg-white rounded-lg overflow-hidden flex h-[80vh]">
+            {/* Left side - Media */}
+            <div className="w-[60%] relative bg-black flex items-center">
+              {previewMemory.mediaType === 'video' ? (
+                <video 
+                  src={previewMemory.mediaUrl} 
+                  className="w-full h-full object-contain"
+                  controls
+                  autoPlay
+                />
+              ) : previewMemory.mediaType === 'audio' ? (
+                <div className="w-full p-8 bg-gray-900 flex items-center justify-center">
+                  <audio 
+                    src={previewMemory.mediaUrl} 
+                    className="w-full"
+                    controls
+                    autoPlay
+                  />
+                </div>
+              ) : (
+                <img 
+                  src={previewMemory.mediaUrl} 
+                  alt={previewMemory.description}
+                  className="w-full h-full object-contain"
+                />
+              )}
+            </div>
+
+            {/* Right side - Comments */}
+            <div className="w-[40%] flex flex-col h-full">
+              {/* Header */}
+              <div className="p-4 border-b">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center">
+                      <img 
+                        src={user.profilePicture || '/iconLOGO.png'} 
+                        alt={user.username}
+                        className="w-8 h-8 rounded-full mr-3"
+                      />
+                      <div>
+                        <p className="font-semibold">{user.username}</p>
+                        <p className="text-xs text-gray-500">{previewMemory.location}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setPreviewMemory(null)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <h2 className="text-xl font-semibold mb-2">{previewMemory.title}</h2>
+                  <p className="text-gray-600 mb-2">{previewMemory.description}</p>
+                  <p className="text-sm text-gray-500 mb-3">
+                    {new Date(previewMemory.createdAt).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Comments Section */}
+              <CommentsSection memoryId={previewMemory.id} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}; 
+};
